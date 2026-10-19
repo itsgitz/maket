@@ -4,4 +4,4 @@ apps/api/tmp/
 apps/api/internal/webui/dist/*
 !apps/api/internal/webui/dist/.gitkeep
 .env
-data/
+apps/api/data/

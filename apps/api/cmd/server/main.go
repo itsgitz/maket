@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/itsgitz/maket/apps/api/internal/config"
+	"github.com/itsgitz/maket/apps/api/internal/db"
 	"github.com/itsgitz/maket/apps/api/internal/httpapi"
 	"github.com/itsgitz/maket/apps/api/internal/preview"
+	"github.com/itsgitz/maket/apps/api/internal/storage"
 	"github.com/itsgitz/maket/apps/api/internal/webui"
 )
 
@@ -33,6 +35,24 @@ func run() error {
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		return fmt.Errorf("create data dir: %w", err)
+	}
+	database, err := db.Open(ctx, cfg.DBPath())
+	if err != nil {
+		return err
+	}
+	defer database.Close()
+
+	store, err := storage.NewLocal(cfg.StorageDir())
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
 	srv := &http.Server{
 		Addr: cfg.ListenAddr,
 		Handler: httpapi.New(cfg, httpapi.Deps{
@@ -43,9 +63,6 @@ func run() error {
 		IdleTimeout:       2 * time.Minute,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	errc := make(chan error, 1)
 	go func() {

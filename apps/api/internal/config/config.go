@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,6 +17,8 @@ type Config struct {
 	AppHost       string // MAKET_APP_HOST
 	PreviewDomain string // MAKET_PREVIEW_DOMAIN; previews live at <slug>.<PreviewDomain>
 	PublicScheme  string // MAKET_PUBLIC_SCHEME: "https" or "http"
+	DataDir       string // MAKET_DATA_DIR: holds the SQLite file and local storage
+	StorageDriver string // MAKET_STORAGE_DRIVER: "local" ("s3" arrives with S3Store)
 }
 
 // Load reads the config from the process environment.
@@ -46,10 +49,15 @@ func FromLookup(lookup func(string) (string, bool)) (Config, error) {
 		AppHost:       strings.ToLower(required("MAKET_APP_HOST")),
 		PreviewDomain: strings.ToLower(required("MAKET_PREVIEW_DOMAIN")),
 		PublicScheme:  strings.ToLower(get("MAKET_PUBLIC_SCHEME", "https")),
+		DataDir:       required("MAKET_DATA_DIR"),
+		StorageDriver: strings.ToLower(get("MAKET_STORAGE_DRIVER", "local")),
 	}
 
 	if c.PublicScheme != "https" && c.PublicScheme != "http" {
 		problems = append(problems, fmt.Errorf("MAKET_PUBLIC_SCHEME must be \"https\" or \"http\", got %q", c.PublicScheme))
+	}
+	if c.StorageDriver != "local" {
+		problems = append(problems, fmt.Errorf("MAKET_STORAGE_DRIVER must be \"local\" (s3 is not implemented yet), got %q", c.StorageDriver))
 	}
 	if c.AppHost != "" && c.PreviewDomain != "" {
 		// The app must never be reachable as a preview subdomain, or preview
@@ -63,6 +71,16 @@ func FromLookup(lookup func(string) (string, bool)) (Config, error) {
 		return Config{}, errors.Join(problems...)
 	}
 	return c, nil
+}
+
+// DBPath is the SQLite database file inside the data dir.
+func (c Config) DBPath() string {
+	return filepath.Join(c.DataDir, "maket.db")
+}
+
+// StorageDir is where LocalStore keeps Prototype files.
+func (c Config) StorageDir() string {
+	return filepath.Join(c.DataDir, "storage")
 }
 
 // AppOrigin is the dashboard origin, e.g. "https://app.kotakserver.my.id".
