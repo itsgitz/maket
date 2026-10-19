@@ -278,17 +278,24 @@ func plainError(w http.ResponseWriter, code int) {
 	http.Error(w, fmt.Sprintf("%d %s", code, msg), code)
 }
 
+// cacheControl lets Cloudflare (a shared cache) keep a file for 5 minutes,
+// purged on re-upload, while browsers revalidate on every visit, which is
+// a cheap 304 when nothing changed. The brief's plain "max-age=300" let a
+// visitor's browser show the previous Version for up to 5 minutes after a
+// re-upload, which no CDN purge can reach.
+const cacheControl = "public, max-age=0, must-revalidate, s-maxage=300"
+
 // setHeaders applies the headers every preview response carries. Error
 // responses replace the Cache-Control with setNoStore.
 func setHeaders(h http.Header) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("X-Robots-Tag", "noindex, nofollow")
 	h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-	h.Set("Cache-Control", "public, max-age=300")
+	h.Set("Cache-Control", cacheControl)
 }
 
 // setNoStore marks an error response uncacheable. This deliberately departs
-// from the brief's blanket "public, max-age=300": Cloudflare would otherwise
+// from the brief's blanket caching of every response: Cloudflare would otherwise
 // keep serving a 404 for a path for minutes after an Upload adds it.
 func setNoStore(h http.Header) {
 	h.Set("Cache-Control", "no-store")

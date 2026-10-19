@@ -360,7 +360,7 @@ func checkHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
 	wantCache := "no-store"
 	switch rec.Code {
 	case 200, 206, 301, 304:
-		wantCache = "public, max-age=300"
+		wantCache = cacheControl
 	}
 	if got := h.Get("Cache-Control"); got != wantCache {
 		t.Errorf("status %d: Cache-Control = %q, want %q", rec.Code, got, wantCache)
