@@ -12,12 +12,27 @@ func lookupFrom(env map[string]string) func(string) (string, bool) {
 	}
 }
 
+// valid returns a complete environment, with overrides applied.
+func valid(overrides map[string]string) map[string]string {
+	env := map[string]string{
+		"MAKET_APP_HOST":             "app.kotakserver.my.id",
+		"MAKET_PREVIEW_DOMAIN":       "cloudshare.my.id",
+		"MAKET_DATA_DIR":             "/data",
+		"MAKET_GITHUB_CLIENT_ID":     "id",
+		"MAKET_GITHUB_CLIENT_SECRET": "secret",
+		"MAKET_ALLOWED_GITHUB_USERS": "anggit",
+	}
+	for k, v := range overrides {
+		env[k] = v
+	}
+	return env
+}
+
 func TestFromLookupDefaults(t *testing.T) {
-	c, err := FromLookup(lookupFrom(map[string]string{
-		"MAKET_APP_HOST":       "App.Kotakserver.my.id",
-		"MAKET_PREVIEW_DOMAIN": "cloudshare.my.id",
-		"MAKET_DATA_DIR":       "/data",
-	}))
+	c, err := FromLookup(lookupFrom(valid(map[string]string{
+		"MAKET_APP_HOST":             "App.Kotakserver.my.id",
+		"MAKET_ALLOWED_GITHUB_USERS": " anggit, ,Teammate1 ",
+	})))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,6 +51,15 @@ func TestFromLookupDefaults(t *testing.T) {
 	if got := c.AppOrigin(); got != "https://app.kotakserver.my.id" {
 		t.Errorf("AppOrigin = %q", got)
 	}
+	if got := c.GitHubRedirectURL(); got != "https://app.kotakserver.my.id/api/auth/github/callback" {
+		t.Errorf("GitHubRedirectURL = %q", got)
+	}
+	if !c.Secure() {
+		t.Error("https should be Secure")
+	}
+	if got := strings.Join(c.AllowedGitHubUsers, "|"); got != "anggit|Teammate1" {
+		t.Errorf("AllowedGitHubUsers = %q", got)
+	}
 }
 
 func TestFromLookupReportsAllProblems(t *testing.T) {
@@ -46,7 +70,8 @@ func TestFromLookupReportsAllProblems(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	for _, want := range []string{"MAKET_APP_HOST", "MAKET_PREVIEW_DOMAIN", "MAKET_PUBLIC_SCHEME", "MAKET_DATA_DIR", "MAKET_STORAGE_DRIVER"} {
+	for _, want := range []string{"MAKET_APP_HOST", "MAKET_PREVIEW_DOMAIN", "MAKET_PUBLIC_SCHEME", "MAKET_DATA_DIR", "MAKET_STORAGE_DRIVER",
+		"MAKET_GITHUB_CLIENT_ID", "MAKET_GITHUB_CLIENT_SECRET", "MAKET_ALLOWED_GITHUB_USERS"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %s", err, want)
 		}
@@ -54,12 +79,19 @@ func TestFromLookupReportsAllProblems(t *testing.T) {
 }
 
 func TestFromLookupRejectsAppUnderPreviewDomain(t *testing.T) {
-	_, err := FromLookup(lookupFrom(map[string]string{
-		"MAKET_APP_HOST":       "app.cloudshare.my.id",
-		"MAKET_PREVIEW_DOMAIN": "cloudshare.my.id",
-		"MAKET_DATA_DIR":       "/data",
-	}))
+	_, err := FromLookup(lookupFrom(valid(map[string]string{
+		"MAKET_APP_HOST": "app.cloudshare.my.id",
+	})))
 	if err == nil {
 		t.Fatal("expected error for app host under preview domain")
+	}
+}
+
+func TestFromLookupRejectsBlankAllowlist(t *testing.T) {
+	_, err := FromLookup(lookupFrom(valid(map[string]string{
+		"MAKET_ALLOWED_GITHUB_USERS": " , ,",
+	})))
+	if err == nil || !strings.Contains(err.Error(), "MAKET_ALLOWED_GITHUB_USERS") {
+		t.Errorf("got %v, want allowlist error", err)
 	}
 }

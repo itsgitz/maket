@@ -19,6 +19,10 @@ type Config struct {
 	PublicScheme  string // MAKET_PUBLIC_SCHEME: "https" or "http"
 	DataDir       string // MAKET_DATA_DIR: holds the SQLite file and local storage
 	StorageDriver string // MAKET_STORAGE_DRIVER: "local" ("s3" arrives with S3Store)
+
+	GitHubClientID     string   // MAKET_GITHUB_CLIENT_ID
+	GitHubClientSecret string   // MAKET_GITHUB_CLIENT_SECRET
+	AllowedGitHubUsers []string // MAKET_ALLOWED_GITHUB_USERS, comma-separated
 }
 
 // Load reads the config from the process environment.
@@ -51,6 +55,17 @@ func FromLookup(lookup func(string) (string, bool)) (Config, error) {
 		PublicScheme:  strings.ToLower(get("MAKET_PUBLIC_SCHEME", "https")),
 		DataDir:       required("MAKET_DATA_DIR"),
 		StorageDriver: strings.ToLower(get("MAKET_STORAGE_DRIVER", "local")),
+
+		GitHubClientID:     required("MAKET_GITHUB_CLIENT_ID"),
+		GitHubClientSecret: required("MAKET_GITHUB_CLIENT_SECRET"),
+	}
+	for _, login := range strings.Split(get("MAKET_ALLOWED_GITHUB_USERS", ""), ",") {
+		if login = strings.TrimSpace(login); login != "" {
+			c.AllowedGitHubUsers = append(c.AllowedGitHubUsers, login)
+		}
+	}
+	if len(c.AllowedGitHubUsers) == 0 {
+		problems = append(problems, errors.New("MAKET_ALLOWED_GITHUB_USERS must list at least one GitHub username"))
 	}
 
 	if c.PublicScheme != "https" && c.PublicScheme != "http" {
@@ -81,6 +96,17 @@ func (c Config) DBPath() string {
 // StorageDir is where LocalStore keeps Prototype files.
 func (c Config) StorageDir() string {
 	return filepath.Join(c.DataDir, "storage")
+}
+
+// Secure reports whether the public scheme is https, which decides the
+// session cookie's name and Secure flag.
+func (c Config) Secure() bool {
+	return c.PublicScheme == "https"
+}
+
+// GitHubRedirectURL is the OAuth callback registered on the GitHub app.
+func (c Config) GitHubRedirectURL() string {
+	return c.AppOrigin() + "/api/auth/github/callback"
 }
 
 // AppOrigin is the dashboard origin, e.g. "https://app.kotakserver.my.id".

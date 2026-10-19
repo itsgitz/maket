@@ -13,9 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/itsgitz/maket/apps/api/internal/auth"
 	"github.com/itsgitz/maket/apps/api/internal/config"
 	"github.com/itsgitz/maket/apps/api/internal/db"
 	"github.com/itsgitz/maket/apps/api/internal/httpapi"
+	"github.com/itsgitz/maket/apps/api/internal/oauth/github"
 	"github.com/itsgitz/maket/apps/api/internal/preview"
 	"github.com/itsgitz/maket/apps/api/internal/storage"
 	"github.com/itsgitz/maket/apps/api/internal/webui"
@@ -53,11 +55,24 @@ func run() error {
 	}
 	defer store.Close()
 
+	allow, err := auth.NewAllowlist(cfg.AllowedGitHubUsers)
+	if err != nil {
+		return err
+	}
+	authSvc := auth.NewService(database, allow, time.Now)
+	go cleanup(ctx, log, authSvc)
+
 	srv := &http.Server{
 		Addr: cfg.ListenAddr,
 		Handler: httpapi.New(cfg, httpapi.Deps{
 			Dashboard: webui.Handler(),
 			Previews:  preview.Handler{},
+			Auth:      authSvc,
+			GitHub: github.New(github.Config{
+				ClientID:     cfg.GitHubClientID,
+				ClientSecret: cfg.GitHubClientSecret,
+				RedirectURL:  cfg.GitHubRedirectURL(),
+			}),
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
@@ -86,4 +101,23 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// cleanup runs the housekeeping jobs at startup and then hourly until ctx
+// ends.
+func cleanup(ctx context.Context, log *slog.Logger, authSvc *auth.Service) {
+	tick := time.NewTicker(time.Hour)
+	defer tick.Stop()
+	for {
+		if n, err := authSvc.DeleteExpiredSessions(ctx); err != nil {
+			log.Error("cleanup: expired sessions", "err", err)
+		} else if n > 0 {
+			log.Info("cleanup: deleted expired sessions", "count", n)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
 }

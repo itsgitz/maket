@@ -23,6 +23,8 @@ cp .env.example .env
 bun run dev
 ```
 
+To sign in locally, create a GitHub OAuth app (GitHub → Settings → Developer settings → OAuth Apps) with callback URL `http://app.localhost:5173/api/auth/github/callback`, put its client ID and secret in `.env`, and list your GitHub username in `MAKET_ALLOWED_GITHUB_USERS`.
+
 Open http://app.localhost:5173. Vite serves the dashboard and proxies `/api` to the Go server on `:8080`, keeping the `Host` header so host routing works. Previews are served by Go directly at `http://<slug>.preview.localhost:8080`. Modern browsers resolve `*.localhost` to your machine, so no `/etc/hosts` edits are needed.
 
 ## Scripts

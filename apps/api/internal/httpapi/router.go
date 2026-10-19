@@ -3,11 +3,12 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
+	"github.com/itsgitz/maket/apps/api/internal/auth"
 	"github.com/itsgitz/maket/apps/api/internal/config"
+	"github.com/itsgitz/maket/apps/api/internal/jsonapi"
 	"github.com/itsgitz/maket/apps/api/internal/preview"
 )
 
@@ -20,6 +21,8 @@ type PreviewServer interface {
 type Deps struct {
 	Dashboard http.Handler // embedded SPA, served on the app host outside /api
 	Previews  PreviewServer
+	Auth      *auth.Service
+	GitHub    GitHubLogin
 }
 
 // New returns the top-level handler:
@@ -30,11 +33,25 @@ type Deps struct {
 //
 // Hosts are matched exactly, port included, against the configured values.
 func New(cfg config.Config, deps Deps) http.Handler {
-	app := http.NewServeMux()
-	app.HandleFunc("GET /api/healthz", healthz)
-	app.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		WriteError(w, http.StatusNotFound, "not_found", "no such API endpoint")
+	h := authHandlers{auth: deps.Auth, github: deps.GitHub, secure: cfg.Secure()}
+	anyAuth := auth.Require()
+	sessionOnly := auth.Require(auth.MethodSession)
+
+	api := http.NewServeMux()
+	api.HandleFunc("GET /api/healthz", healthz)
+	api.HandleFunc("GET /api/auth/github/login", h.login)
+	api.HandleFunc("GET /api/auth/github/callback", h.callback)
+	api.Handle("POST /api/auth/logout", sessionOnly(http.HandlerFunc(h.logout)))
+	api.Handle("GET /api/me", anyAuth(http.HandlerFunc(h.me)))
+	api.Handle("GET /api/keys", sessionOnly(http.HandlerFunc(h.listKeys)))
+	api.Handle("POST /api/keys", sessionOnly(http.HandlerFunc(h.createKey)))
+	api.Handle("DELETE /api/keys/{id}", sessionOnly(http.HandlerFunc(h.revokeKey)))
+	api.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		jsonapi.Error(w, http.StatusNotFound, "not_found", "no such API endpoint")
 	})
+
+	app := http.NewServeMux()
+	app.Handle("/api/", deps.Auth.Middleware(auth.MiddlewareConfig{AppOrigin: cfg.AppOrigin(), Secure: cfg.Secure()})(api))
 	app.Handle("/", deps.Dashboard)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -52,22 +69,5 @@ func New(cfg config.Config, deps Deps) http.Handler {
 }
 
 func healthz(w http.ResponseWriter, r *http.Request) {
-	WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-// WriteJSON writes v as a JSON response with the given status.
-func WriteJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
-// WriteError writes the API error shape: {"error": {"code", "message"}}.
-func WriteError(w http.ResponseWriter, status int, code, message string) {
-	type body struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}
-	WriteJSON(w, status, map[string]body{"error": {Code: code, Message: message}})
+	jsonapi.Write(w, http.StatusOK, map[string]string{"status": "ok"})
 }
