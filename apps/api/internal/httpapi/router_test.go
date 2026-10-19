@@ -3,10 +3,14 @@ package httpapi
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/itsgitz/maket/apps/api/internal/auth"
 	"github.com/itsgitz/maket/apps/api/internal/config"
+	"github.com/itsgitz/maket/apps/api/internal/db"
 )
 
 type fakePreviews struct{ slug string }
@@ -16,7 +20,22 @@ func (f *fakePreviews) ServePreview(w http.ResponseWriter, r *http.Request, slug
 	w.Write([]byte("preview:" + slug))
 }
 
-func newTestRouter() (http.Handler, *fakePreviews) {
+// newAuthService returns an auth.Service over a fresh database.
+func newAuthService(t *testing.T, allowed ...string) *auth.Service {
+	t.Helper()
+	database, err := db.Open(t.Context(), filepath.Join(t.TempDir(), "maket.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { database.Close() })
+	allow, err := auth.NewAllowlist(allowed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return auth.NewService(database, allow, time.Now)
+}
+
+func newTestRouter(t *testing.T) (http.Handler, *fakePreviews) {
 	cfg := config.Config{
 		AppHost:       "app.localhost:5173",
 		PreviewDomain: "preview.localhost:8080",
@@ -26,11 +45,11 @@ func newTestRouter() (http.Handler, *fakePreviews) {
 	dashboard := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("dashboard"))
 	})
-	return New(cfg, Deps{Dashboard: dashboard, Previews: previews}), previews
+	return New(cfg, Deps{Dashboard: dashboard, Previews: previews, Auth: newAuthService(t, "someone")}), previews
 }
 
 func TestHostRouting(t *testing.T) {
-	h, _ := newTestRouter()
+	h, _ := newTestRouter(t)
 	tests := []struct {
 		name, host, path string
 		wantStatus       int
@@ -68,7 +87,7 @@ func TestHostRouting(t *testing.T) {
 }
 
 func TestUnmatchedAPIMethodIsJSONError(t *testing.T) {
-	h, _ := newTestRouter()
+	h, _ := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/healthz", nil)
 	req.Host = "app.localhost:5173"
 	rec := httptest.NewRecorder()
