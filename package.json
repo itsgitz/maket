@@ -1,0 +1,13 @@
+{
+  "name": "maket",
+  "private": true,
+  "workspaces": ["apps/web"],
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "build:web": "bun run --filter @maket/web build",
+    "build:api": "cd apps/api && CGO_ENABLED=0 go build -trimpath -ldflags=-s -o ../../bin/maket-server ./cmd/server",
+    "build:cli": "bun scripts/build-cli.ts",
+    "build": "bun run build:web && bun run build:api",
+    "test": "cd apps/api && go test ./... && cd ../.. && bun run --filter @maket/web check"
+  }
+}
