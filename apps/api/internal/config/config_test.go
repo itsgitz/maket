@@ -95,3 +95,26 @@ func TestFromLookupRejectsBlankAllowlist(t *testing.T) {
 		t.Errorf("got %v, want allowlist error", err)
 	}
 }
+
+func TestFromLookupLimits(t *testing.T) {
+	c, err := FromLookup(lookupFrom(valid(map[string]string{"MAKET_MAX_FILES": "50", "MAKET_USER_QUOTA_MB": "2"})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.MaxUploadBytes != 20<<20 || c.MaxExtractedBytes != 100<<20 || c.MaxFiles != 50 || c.UserQuotaBytes != 2<<20 {
+		t.Errorf("limits = %d %d %d %d", c.MaxUploadBytes, c.MaxExtractedBytes, c.MaxFiles, c.UserQuotaBytes)
+	}
+	if c.CloudflarePurge() {
+		t.Error("purge should be off by default")
+	}
+	for _, env := range []map[string]string{
+		{"MAKET_MAX_FILES": "0"},
+		{"MAKET_MAX_UPLOAD_MB": "ten"},
+		{"MAKET_CF_API_TOKEN": "t"},
+		{"MAKET_CF_ZONE_ID": "z"},
+	} {
+		if _, err := FromLookup(lookupFrom(valid(env))); err == nil {
+			t.Errorf("%v: expected error", env)
+		}
+	}
+}

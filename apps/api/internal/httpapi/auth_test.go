@@ -7,13 +7,20 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/itsgitz/maket/apps/api/internal/auth"
 	"github.com/itsgitz/maket/apps/api/internal/config"
 	"github.com/itsgitz/maket/apps/api/internal/oauth/github"
 	"github.com/itsgitz/maket/apps/api/internal/oauth/github/githubtest"
+	"github.com/itsgitz/maket/apps/api/internal/preview"
+	"github.com/itsgitz/maket/apps/api/internal/prototype"
+	"github.com/itsgitz/maket/apps/api/internal/prototype/archive"
+	"github.com/itsgitz/maket/apps/api/internal/storage"
 )
 
 // testApp is a running maket API wired to a fake GitHub.
@@ -36,11 +43,28 @@ func newTestApp(t *testing.T, ghUser github.User, allowed ...string) *testApp {
 		PublicScheme:  "http",
 	}
 	gh := githubtest.NewServer(t, ghUser)
+	authSvc, database := newAuthServiceDB(t, allowed...)
+	store, err := storage.NewLocal(filepath.Join(t.TempDir(), "storage"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	tmp := t.TempDir()
+	allow, _ := auth.NewAllowlist(allowed)
+	protos := prototype.NewService(database, store, allow, prototype.Config{
+		Limits:      archive.Limits{MaxFiles: 20, MaxExtractedBytes: 64 << 10},
+		QuotaBytes:  100 << 10,
+		TmpDir:      tmp,
+		PreviewHost: func(slug string) string { return slug + "." + cfg.PreviewDomain },
+	}, nil, time.Now)
 	srv := httptest.NewUnstartedServer(New(cfg, Deps{
-		Dashboard: http.NotFoundHandler(),
-		Previews:  &fakePreviews{},
-		Auth:      newAuthService(t, allowed...),
-		GitHub:    github.New(gh.Config("client-id", "client-secret", cfg.GitHubRedirectURL())),
+		Dashboard:      http.NotFoundHandler(),
+		Previews:       &preview.Handler{Lookup: protos, Store: store},
+		Auth:           authSvc,
+		GitHub:         github.New(gh.Config("client-id", "client-secret", cfg.GitHubRedirectURL())),
+		Prototypes:     protos,
+		MaxUploadBytes: 32 << 10,
+		TmpDir:         tmp,
 	}))
 	srv.Listener.Close()
 	srv.Listener = ln

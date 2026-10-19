@@ -22,3 +22,14 @@ func Error(w http.ResponseWriter, status int, code, message string) {
 	}
 	Write(w, status, map[string]body{"error": {Code: code, Message: message}})
 }
+
+// ErrorDetails is Error with an extra "details" object, e.g. the offending
+// paths of a rejected upload: {"error": {"code", "message", "details"}}.
+func ErrorDetails(w http.ResponseWriter, status int, code, message string, details any) {
+	type body struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Details any    `json:"details,omitempty"`
+	}
+	Write(w, status, map[string]body{"error": {Code: code, Message: message, Details: details}})
+}

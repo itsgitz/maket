@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -23,6 +24,16 @@ type Config struct {
 	GitHubClientID     string   // MAKET_GITHUB_CLIENT_ID
 	GitHubClientSecret string   // MAKET_GITHUB_CLIENT_SECRET
 	AllowedGitHubUsers []string // MAKET_ALLOWED_GITHUB_USERS, comma-separated
+
+	MaxUploadBytes    int64 // MAKET_MAX_UPLOAD_MB
+	MaxExtractedBytes int64 // MAKET_MAX_EXTRACTED_MB
+	MaxFiles          int   // MAKET_MAX_FILES
+	UserQuotaBytes    int64 // MAKET_USER_QUOTA_MB
+
+	// Optional: purge a Prototype's Cloudflare cache after re-upload or
+	// delete. Both or neither.
+	CloudflareAPIToken string // MAKET_CF_API_TOKEN
+	CloudflareZoneID   string // MAKET_CF_ZONE_ID
 }
 
 // Load reads the config from the process environment.
@@ -59,6 +70,26 @@ func FromLookup(lookup func(string) (string, bool)) (Config, error) {
 		GitHubClientID:     required("MAKET_GITHUB_CLIENT_ID"),
 		GitHubClientSecret: required("MAKET_GITHUB_CLIENT_SECRET"),
 	}
+	positive := func(name string, def int) int {
+		v := get(name, strconv.Itoa(def))
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			problems = append(problems, fmt.Errorf("%s must be a positive whole number, got %q", name, v))
+		}
+		return n
+	}
+	const mb = 1 << 20
+	c.MaxUploadBytes = int64(positive("MAKET_MAX_UPLOAD_MB", 20)) * mb
+	c.MaxExtractedBytes = int64(positive("MAKET_MAX_EXTRACTED_MB", 100)) * mb
+	c.MaxFiles = positive("MAKET_MAX_FILES", 500)
+	c.UserQuotaBytes = int64(positive("MAKET_USER_QUOTA_MB", 1024)) * mb
+
+	c.CloudflareAPIToken = get("MAKET_CF_API_TOKEN", "")
+	c.CloudflareZoneID = get("MAKET_CF_ZONE_ID", "")
+	if (c.CloudflareAPIToken == "") != (c.CloudflareZoneID == "") {
+		problems = append(problems, errors.New("MAKET_CF_API_TOKEN and MAKET_CF_ZONE_ID must be set together (or both left empty)"))
+	}
+
 	for _, login := range strings.Split(get("MAKET_ALLOWED_GITHUB_USERS", ""), ",") {
 		if login = strings.TrimSpace(login); login != "" {
 			c.AllowedGitHubUsers = append(c.AllowedGitHubUsers, login)
@@ -96,6 +127,11 @@ func (c Config) DBPath() string {
 // StorageDir is where LocalStore keeps Prototype files.
 func (c Config) StorageDir() string {
 	return filepath.Join(c.DataDir, "storage")
+}
+
+// CloudflarePurge reports whether cache purging is configured.
+func (c Config) CloudflarePurge() bool {
+	return c.CloudflareAPIToken != ""
 }
 
 // Secure reports whether the public scheme is https, which decides the

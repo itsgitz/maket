@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -23,6 +24,12 @@ func (f *fakePreviews) ServePreview(w http.ResponseWriter, r *http.Request, slug
 // newAuthService returns an auth.Service over a fresh database.
 func newAuthService(t *testing.T, allowed ...string) *auth.Service {
 	t.Helper()
+	svc, _ := newAuthServiceDB(t, allowed...)
+	return svc
+}
+
+func newAuthServiceDB(t *testing.T, allowed ...string) (*auth.Service, *sql.DB) {
+	t.Helper()
 	database, err := db.Open(t.Context(), filepath.Join(t.TempDir(), "maket.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +39,7 @@ func newAuthService(t *testing.T, allowed ...string) *auth.Service {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return auth.NewService(database, allow, time.Now)
+	return auth.NewService(database, allow, time.Now), database
 }
 
 func newTestRouter(t *testing.T) (http.Handler, *fakePreviews) {

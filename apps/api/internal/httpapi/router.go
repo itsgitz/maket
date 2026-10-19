@@ -10,6 +10,7 @@ import (
 	"github.com/itsgitz/maket/apps/api/internal/config"
 	"github.com/itsgitz/maket/apps/api/internal/jsonapi"
 	"github.com/itsgitz/maket/apps/api/internal/preview"
+	"github.com/itsgitz/maket/apps/api/internal/prototype"
 )
 
 // PreviewServer serves the Preview for a Slug.
@@ -23,6 +24,10 @@ type Deps struct {
 	Previews  PreviewServer
 	Auth      *auth.Service
 	GitHub    GitHubLogin
+
+	Prototypes     *prototype.Service
+	MaxUploadBytes int64  // largest accepted upload body
+	TmpDir         string // where upload bodies are spooled
 }
 
 // New returns the top-level handler:
@@ -37,6 +42,8 @@ func New(cfg config.Config, deps Deps) http.Handler {
 	anyAuth := auth.Require()
 	sessionOnly := auth.Require(auth.MethodSession)
 
+	ph := prototypeHandlers{svc: deps.Prototypes, maxUploadBytes: deps.MaxUploadBytes, tmpDir: deps.TmpDir, previewURL: cfg.PreviewURL}
+
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/healthz", healthz)
 	api.HandleFunc("GET /api/auth/github/login", h.login)
@@ -46,6 +53,11 @@ func New(cfg config.Config, deps Deps) http.Handler {
 	api.Handle("GET /api/keys", sessionOnly(http.HandlerFunc(h.listKeys)))
 	api.Handle("POST /api/keys", sessionOnly(http.HandlerFunc(h.createKey)))
 	api.Handle("DELETE /api/keys/{id}", sessionOnly(http.HandlerFunc(h.revokeKey)))
+	api.Handle("GET /api/prototypes", anyAuth(http.HandlerFunc(ph.list)))
+	api.Handle("POST /api/prototypes", anyAuth(http.HandlerFunc(ph.create)))
+	api.Handle("GET /api/prototypes/{slug}", anyAuth(http.HandlerFunc(ph.get)))
+	api.Handle("PUT /api/prototypes/{slug}", anyAuth(http.HandlerFunc(ph.replace)))
+	api.Handle("DELETE /api/prototypes/{slug}", anyAuth(http.HandlerFunc(ph.delete)))
 	api.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		jsonapi.Error(w, http.StatusNotFound, "not_found", "no such API endpoint")
 	})

@@ -10,15 +10,19 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/itsgitz/maket/apps/api/internal/auth"
+	"github.com/itsgitz/maket/apps/api/internal/cfpurge"
 	"github.com/itsgitz/maket/apps/api/internal/config"
 	"github.com/itsgitz/maket/apps/api/internal/db"
 	"github.com/itsgitz/maket/apps/api/internal/httpapi"
 	"github.com/itsgitz/maket/apps/api/internal/oauth/github"
 	"github.com/itsgitz/maket/apps/api/internal/preview"
+	"github.com/itsgitz/maket/apps/api/internal/prototype"
+	"github.com/itsgitz/maket/apps/api/internal/prototype/archive"
 	"github.com/itsgitz/maket/apps/api/internal/storage"
 	"github.com/itsgitz/maket/apps/api/internal/webui"
 )
@@ -60,19 +64,38 @@ func run() error {
 		return err
 	}
 	authSvc := auth.NewService(database, allow, time.Now)
-	go cleanup(ctx, log, authSvc)
+
+	tmpDir := filepath.Join(cfg.DataDir, "tmp")
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		return fmt.Errorf("create tmp dir: %w", err)
+	}
+	var purger prototype.Purger // stays a nil interface when purging is off
+	if cfg.CloudflarePurge() {
+		purger = cfpurge.New(cfg.CloudflareAPIToken, cfg.CloudflareZoneID)
+	}
+	protoSvc := prototype.NewService(database, store, allow, prototype.Config{
+		Limits:      archive.Limits{MaxFiles: cfg.MaxFiles, MaxExtractedBytes: cfg.MaxExtractedBytes},
+		QuotaBytes:  cfg.UserQuotaBytes,
+		TmpDir:      tmpDir,
+		PreviewHost: func(slug string) string { return slug + "." + cfg.PreviewDomain },
+	}, purger, time.Now)
+
+	go cleanup(ctx, log, authSvc, protoSvc)
 
 	srv := &http.Server{
 		Addr: cfg.ListenAddr,
 		Handler: httpapi.New(cfg, httpapi.Deps{
 			Dashboard: webui.Handler(),
-			Previews:  preview.Handler{},
+			Previews:  &preview.Handler{Lookup: protoSvc, Store: store},
 			Auth:      authSvc,
 			GitHub: github.New(github.Config{
 				ClientID:     cfg.GitHubClientID,
 				ClientSecret: cfg.GitHubClientSecret,
 				RedirectURL:  cfg.GitHubRedirectURL(),
 			}),
+			Prototypes:     protoSvc,
+			MaxUploadBytes: cfg.MaxUploadBytes,
+			TmpDir:         tmpDir,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
@@ -105,7 +128,7 @@ func run() error {
 
 // cleanup runs the housekeeping jobs at startup and then hourly until ctx
 // ends.
-func cleanup(ctx context.Context, log *slog.Logger, authSvc *auth.Service) {
+func cleanup(ctx context.Context, log *slog.Logger, authSvc *auth.Service, protoSvc *prototype.Service) {
 	tick := time.NewTicker(time.Hour)
 	defer tick.Stop()
 	for {
@@ -113,6 +136,9 @@ func cleanup(ctx context.Context, log *slog.Logger, authSvc *auth.Service) {
 			log.Error("cleanup: expired sessions", "err", err)
 		} else if n > 0 {
 			log.Info("cleanup: deleted expired sessions", "count", n)
+		}
+		if err := protoSvc.Cleanup(ctx, time.Hour); err != nil {
+			log.Error("cleanup: prototype leftovers", "err", err)
 		}
 		select {
 		case <-ctx.Done():

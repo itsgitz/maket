@@ -5,3 +5,4 @@ apps/api/internal/webui/dist/*
 !apps/api/internal/webui/dist/.gitkeep
 .env
 apps/api/data/
+.claude/worktrees/
