@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/itsgitz/maket/apps/api/internal/apitypes"
 	"github.com/itsgitz/maket/apps/api/internal/oauth/github"
 )
 
@@ -99,7 +100,7 @@ func TestPrototypesEndToEnd(t *testing.T) {
 	wantStatus(t, app.upload("POST", "/api/prototypes", nil, "site.zip", zipBytes, nil), http.StatusForbidden)
 	resp := app.upload("POST", "/api/prototypes", app.withOrigin(), "site.zip", zipBytes, map[string]string{"spa": "true"})
 	wantStatus(t, resp, http.StatusCreated)
-	p := decode[prototypeResponse](t, resp)
+	p := decode[apitypes.Prototype](t, resp)
 	if p.Name != "site" || !p.SPA || p.Version != 1 || p.FileCount != 3 || p.URL != "http://"+p.Slug+".preview.localhost:8080" {
 		t.Errorf("created %+v", p)
 	}
@@ -122,7 +123,7 @@ func TestPrototypesEndToEnd(t *testing.T) {
 	created := decode[apiKeyResponse](t, app.do("POST", "/api/keys", `{"name":"agent"}`, app.withOrigin()))
 	resp = app.upload("PUT", "/api/prototypes/"+p.Slug, bearer(created.Key), "index.html", []byte("<h1>v2</h1>"), nil)
 	wantStatus(t, resp, http.StatusOK)
-	p2 := decode[prototypeResponse](t, resp)
+	p2 := decode[apitypes.Prototype](t, resp)
 	if p2.Version != 2 || p2.Name != "site" || !p2.SPA || p2.FileCount != 1 {
 		t.Errorf("replaced %+v", p2)
 	}
@@ -131,14 +132,8 @@ func TestPrototypesEndToEnd(t *testing.T) {
 	}
 
 	// List and get.
-	list := decode[struct {
-		Prototypes []prototypeResponse `json:"prototypes"`
-		Usage      struct {
-			Used  int64 `json:"used_bytes"`
-			Quota int64 `json:"quota_bytes"`
-		} `json:"usage"`
-	}](t, app.do("GET", "/api/prototypes", "", bearer(created.Key)))
-	if len(list.Prototypes) != 1 || list.Usage.Used != 11 || list.Usage.Quota != 100<<10 {
+	list := decode[apitypes.PrototypeList](t, app.do("GET", "/api/prototypes", "", bearer(created.Key)))
+	if len(list.Prototypes) != 1 || list.Usage.UsedBytes != 11 || list.Usage.QuotaBytes != 100<<10 {
 		t.Errorf("list = %+v", list)
 	}
 	wantStatus(t, app.do("GET", "/api/prototypes/"+p.Slug, "", nil), http.StatusOK)

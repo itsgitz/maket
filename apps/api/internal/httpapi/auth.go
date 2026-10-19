@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/itsgitz/maket/apps/api/internal/apitypes"
 	"github.com/itsgitz/maket/apps/api/internal/auth"
 	"github.com/itsgitz/maket/apps/api/internal/jsonapi"
 	"github.com/itsgitz/maket/apps/api/internal/oauth/github"
@@ -114,22 +115,14 @@ func (h authHandlers) logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-type meResponse struct {
-	ID          int64       `json:"id"`
-	GitHubLogin string      `json:"github_login"`
-	Name        string      `json:"name"`
-	AvatarURL   string      `json:"avatar_url"`
-	AuthMethod  auth.Method `json:"auth_method"`
-}
-
 func (h authHandlers) me(w http.ResponseWriter, r *http.Request) {
 	p, _ := auth.PrincipalFrom(r.Context())
-	jsonapi.Write(w, http.StatusOK, meResponse{
+	jsonapi.Write(w, http.StatusOK, apitypes.Me{
 		ID:          p.User.ID,
 		GitHubLogin: p.User.GitHubLogin,
 		Name:        p.User.Name,
 		AvatarURL:   p.User.AvatarURL,
-		AuthMethod:  p.Method,
+		AuthMethod:  string(p.Method),
 	})
 }
 
