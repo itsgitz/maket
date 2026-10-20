@@ -40,6 +40,10 @@ Open http://app.localhost:5173. Vite serves the dashboard and proxies `/api` to 
 
 The CLI is published to [GitHub Releases](https://github.com/itsgitz/maket/releases) by CI; see [Releasing](#releasing).
 
+## Deployment
+
+Production runs on one VPS with rootless Podman, Caddy and the maket server in one Quadlet-managed pod, with nightly restic backups to Cloudflare R2. See [`docs/deploy.md`](docs/deploy.md).
+
 ## Configuration
 
 All settings come from `MAKET_*` environment variables; see `.env.example`. The server exits at startup with a list of every missing or invalid setting.

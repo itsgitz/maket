@@ -1,0 +1,26 @@
+# Quadlet unit for maket. Copy this file and maket-pod.yaml to
+# ~/.config/containers/systemd/, then run `systemctl --user daemon-reload`.
+#
+# This is a .kube unit that plays a Kubernetes pod YAML, not a .pod unit.
+# .pod units need Podman 5.0+. See docs/adr/0001-quadlet-kube-unit-instead-of-pod.md.
+
+[Unit]
+Description=maket (API and Caddy in one pod)
+Wants=network-online.target
+After=network-online.target
+
+[Kube]
+# Pod definition. It is looked up next to this unit file.
+Yaml=maket-pod.yaml
+# Environment for the api container. The operator creates this file from
+# maket-env.example.yaml with mode 600. It is never committed.
+ConfigMap=%h/.config/maket/maket-env.yaml
+# Public HTTPS only. Port 80 is not published, because Cloudflare redirects
+# http to https.
+PublishPort=443:443
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

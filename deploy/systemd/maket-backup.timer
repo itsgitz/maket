@@ -1,0 +1,13 @@
+# Runs maket-backup.service every night. Install to ~/.config/systemd/user/,
+# then run `systemctl --user enable --now maket-backup.timer`.
+[Unit]
+Description=Nightly maket backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15min
+# Run a missed backup at the next start (for example after the VPS was off).
+Persistent=true
+
+[Install]
+WantedBy=timers.target

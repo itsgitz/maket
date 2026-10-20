@@ -1,0 +1,65 @@
+# Kubernetes Pod played by the maket.kube Quadlet unit (podman kube play).
+#
+# Edit before installing. Kubernetes YAML does not expand ~ or %h, so every
+# hostPath must be absolute. Replace /home/deploy with the deploy user's home.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: maket
+  labels:
+    app: maket
+spec:
+  containers:
+    - name: api
+      # Built on the server by deploy/Containerfile. No registry is involved.
+      image: localhost/maket:latest
+      imagePullPolicy: Never
+      envFrom:
+        - configMapRef:
+            name: maket-env
+      volumeMounts:
+        - name: data
+          mountPath: /data
+
+    - name: caddy
+      # Pinned to an exact tag. Caddy is not built locally.
+      image: docker.io/library/caddy:2.10.2-alpine
+      imagePullPolicy: IfNotPresent
+      # The public port (443) is published by the maket.kube unit with
+      # PublishPort. containerPort alone does not bind a host port, so the two
+      # do not conflict.
+      ports:
+        - containerPort: 443
+      volumeMounts:
+        - name: caddyfile
+          mountPath: /etc/caddy/Caddyfile
+          readOnly: true
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+        - name: caddy-data
+          mountPath: /data
+        - name: caddy-config
+          mountPath: /config
+
+  volumes:
+    # Named volume that holds maket.db and storage/. Podman creates it on first
+    # play. backup.sh reads the volume named maket-data.
+    - name: data
+      persistentVolumeClaim:
+        claimName: maket-data
+    # Caddyfile from the git checkout.
+    - name: caddyfile
+      hostPath:
+        path: /home/deploy/maket/deploy/Caddyfile
+        type: File
+    # Cloudflare Origin Certificate: origin.pem and origin.key, mode 600.
+    # Kept outside the checkout so it cannot be committed.
+    - name: certs
+      hostPath:
+        path: /home/deploy/.config/maket/certs
+        type: Directory
+    - name: caddy-data
+      emptyDir: {}
+    - name: caddy-config
+      emptyDir: {}

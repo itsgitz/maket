@@ -7,3 +7,8 @@ apps/api/internal/webui/dist/*
 apps/api/data/
 .claude/worktrees/
 .worktrees/
+
+# Operator-created secrets and certificates (never commit)
+deploy/quadlet/maket-env.yaml
+backup.env
+certs/

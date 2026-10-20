@@ -1,0 +1,42 @@
+# Template for the api container's environment, used as a Kubernetes ConfigMap.
+#
+# Production steps:
+#   mkdir -p ~/.config/maket && chmod 700 ~/.config/maket
+#   cp maket-env.example.yaml ~/.config/maket/maket-env.yaml
+#   chmod 600 ~/.config/maket/maket-env.yaml
+#   # then replace every replace-me value
+#
+# The real file lives outside the checkout and is never committed. Its path is
+# set by ConfigMap= in maket.kube.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: maket-env
+data:
+  # Must match the Caddyfile and the Cloudflare DNS records.
+  MAKET_APP_HOST: "app.kotakserver.my.id"
+  MAKET_PREVIEW_DOMAIN: "cloudshare.my.id"
+  MAKET_PUBLIC_SCHEME: "https"
+
+  # Inside the pod, Caddy reaches the API over loopback.
+  MAKET_LISTEN_ADDR: "127.0.0.1:8080"
+  MAKET_DATA_DIR: "/data"
+  MAKET_STORAGE_DRIVER: "local"
+
+  # GitHub OAuth app. Callback URL:
+  # https://app.kotakserver.my.id/api/auth/github/callback
+  MAKET_GITHUB_CLIENT_ID: "replace-me"
+  MAKET_GITHUB_CLIENT_SECRET: "replace-me"
+  # Comma-separated GitHub usernames allowed to sign in.
+  MAKET_ALLOWED_GITHUB_USERS: "replace-me"
+
+  # Upload limits (defaults from the brief).
+  MAKET_MAX_UPLOAD_MB: "20"
+  MAKET_MAX_EXTRACTED_MB: "100"
+  MAKET_MAX_FILES: "500"
+  MAKET_USER_QUOTA_MB: "1024"
+
+  # Optional Cloudflare cache purge. Set both or neither.
+  # The token needs Zone > Cache Purge > Purge permission for cloudshare.my.id.
+  MAKET_CF_API_TOKEN: ""
+  MAKET_CF_ZONE_ID: ""

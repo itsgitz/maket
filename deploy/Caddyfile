@@ -1,0 +1,19 @@
+# Caddy in front of maket. It runs in the maket pod next to the API container.
+# Only port 443 is served. Cloudflare redirects http to https ("Always Use
+# HTTPS"), so there is no port 80 listener and no redirect listener.
+{
+	auto_https disable_redirects
+	# The admin API is not used. Turning it off leaves no admin port open.
+	admin off
+}
+
+# Both hosts use the Cloudflare Origin Certificate, which is mounted at /certs
+# from the operator's ~/.config/maket/certs directory. The https:// prefix keeps
+# each site on :443 only.
+https://app.kotakserver.my.id, https://*.cloudshare.my.id {
+	tls /certs/origin.pem /certs/origin.key
+
+	# The API container shares the pod network namespace, so it is reachable on
+	# loopback. Caddy keeps the Host header, which the app uses for routing.
+	reverse_proxy 127.0.0.1:8080
+}
