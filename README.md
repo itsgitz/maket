@@ -6,7 +6,7 @@ See `docs/maket-build-brief.md` for the full design, `GLOSSARY.md` for vocabular
 
 ## Layout
 
-- `apps/api`: Go module. The server (`cmd/server`) serves the JSON API, the embedded dashboard and Previews, routed by `Host` header. The CLI lives in `cmd/maket`.
+- `apps/api`: Go module. The server (`cmd/server`) serves the JSON API, the embedded dashboard and Previews, routed by `Host` header. The CLI lives in `cmd/maket`; see [`docs/cli.md`](docs/cli.md) for install and usage. Released CLI binaries are on the [Releases page](https://github.com/itsgitz/maket/releases).
 - `apps/web`: Vite + Svelte 5 dashboard, built into `apps/api/internal/webui/dist` and embedded in the server binary.
 
 ## Requirements
@@ -38,6 +38,21 @@ Open http://app.localhost:5173. Vite serves the dashboard and proxies `/api` to 
 | `bun run build:cli` | Cross-compiles `bin/maket-<os>-<arch>` for linux, darwin, windows on amd64 and arm64 |
 | `bun run test` | Go tests + dashboard type check |
 
+The CLI is published to [GitHub Releases](https://github.com/itsgitz/maket/releases) by CI; see [Releasing](#releasing).
+
 ## Configuration
 
 All settings come from `MAKET_*` environment variables; see `.env.example`. The server exits at startup with a list of every missing or invalid setting.
+
+## Releasing
+
+Push a version tag such as `v0.1.0`. The `release` workflow runs the Go tests, cross-compiles the CLI, writes `checksums.txt` and publishes a GitHub Release with the binaries attached.
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+## License
+
+maket is released under the [MIT License](LICENSE).

@@ -8,8 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
+	"github.com/itsgitz/maket/apps/api/internal/apitypes"
 	"github.com/itsgitz/maket/apps/api/internal/auth"
 	"github.com/itsgitz/maket/apps/api/internal/jsonapi"
 	"github.com/itsgitz/maket/apps/api/internal/prototype"
@@ -23,20 +23,8 @@ type prototypeHandlers struct {
 	previewURL     func(slug string) string
 }
 
-type prototypeResponse struct {
-	Slug      string    `json:"slug"`
-	Name      string    `json:"name"`
-	URL       string    `json:"url"`
-	SPA       bool      `json:"spa"`
-	Version   int       `json:"version"`
-	SizeBytes int64     `json:"size_bytes"`
-	FileCount int       `json:"file_count"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-func (h prototypeHandlers) toResponse(p prototype.Prototype) prototypeResponse {
-	return prototypeResponse{
+func (h prototypeHandlers) toResponse(p prototype.Prototype) apitypes.Prototype {
+	return apitypes.Prototype{
 		Slug: p.Slug, Name: p.Name, URL: h.previewURL(p.Slug), SPA: p.SPA, Version: p.Version,
 		SizeBytes: p.SizeBytes, FileCount: p.FileCount, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
@@ -54,14 +42,14 @@ func (h prototypeHandlers) list(w http.ResponseWriter, r *http.Request) {
 		internalError(w, "usage", err)
 		return
 	}
-	out := make([]prototypeResponse, len(protos))
-	for i, proto := range protos {
-		out[i] = h.toResponse(proto)
+	out := apitypes.PrototypeList{
+		Prototypes: make([]apitypes.Prototype, len(protos)),
+		Usage:      apitypes.Usage{UsedBytes: used, QuotaBytes: h.svc.QuotaBytes()},
 	}
-	jsonapi.Write(w, http.StatusOK, map[string]any{
-		"prototypes": out,
-		"usage":      map[string]int64{"used_bytes": used, "quota_bytes": h.svc.QuotaBytes()},
-	})
+	for i, proto := range protos {
+		out.Prototypes[i] = h.toResponse(proto)
+	}
+	jsonapi.Write(w, http.StatusOK, out)
 }
 
 func (h prototypeHandlers) get(w http.ResponseWriter, r *http.Request) {
@@ -231,7 +219,7 @@ func (h prototypeHandlers) writeError(w http.ResponseWriter, what string, err er
 		}
 		var details any
 		if len(ae.Paths) > 0 {
-			details = map[string]any{"paths": ae.Paths, "more": ae.More}
+			details = apitypes.ErrorDetails{Paths: ae.Paths, More: ae.More}
 		}
 		jsonapi.ErrorDetails(w, status, ae.Code, ae.Message, details)
 	case errors.Is(err, prototype.ErrNotFound):

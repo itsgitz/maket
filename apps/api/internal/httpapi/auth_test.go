@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/itsgitz/maket/apps/api/internal/apitypes"
 	"github.com/itsgitz/maket/apps/api/internal/auth"
 	"github.com/itsgitz/maket/apps/api/internal/config"
 	"github.com/itsgitz/maket/apps/api/internal/oauth/github"
@@ -154,7 +155,7 @@ func TestAuthFlowEndToEnd(t *testing.T) {
 	if loc := cb.Header.Get("Location"); loc != "/" {
 		t.Errorf("callback redirects to %q, want /", loc)
 	}
-	me := decode[meResponse](t, app.do("GET", "/api/me", "", nil))
+	me := decode[apitypes.Me](t, app.do("GET", "/api/me", "", nil))
 	if me.GitHubLogin != "Anggit" || me.Name != "Anggit G" || me.AuthMethod != "session" {
 		t.Errorf("me = %+v", me)
 	}
@@ -169,7 +170,7 @@ func TestAuthFlowEndToEnd(t *testing.T) {
 	}
 
 	// The key works for /me but cannot manage keys, and is never listed in full.
-	viaKey := decode[meResponse](t, app.do("GET", "/api/me", "", bearer(key.Key)))
+	viaKey := decode[apitypes.Me](t, app.do("GET", "/api/me", "", bearer(key.Key)))
 	if viaKey.AuthMethod != "api_key" || viaKey.ID != me.ID {
 		t.Errorf("me via key = %+v", viaKey)
 	}

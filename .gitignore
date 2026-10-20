@@ -6,3 +6,4 @@ apps/api/internal/webui/dist/*
 .env
 apps/api/data/
 .claude/worktrees/
+.worktrees/
