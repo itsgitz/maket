@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,7 +20,15 @@ type Config struct {
 	PreviewDomain string // MAKET_PREVIEW_DOMAIN; previews live at <slug>.<PreviewDomain>
 	PublicScheme  string // MAKET_PUBLIC_SCHEME: "https" or "http"
 	DataDir       string // MAKET_DATA_DIR: holds the SQLite file and local storage
-	StorageDriver string // MAKET_STORAGE_DRIVER: "local" ("s3" arrives with S3Store)
+	StorageDriver string // MAKET_STORAGE_DRIVER: "local" or "s3"
+
+	// Used when StorageDriver is "s3". Region defaults to "auto", which is
+	// what Cloudflare R2 expects.
+	S3Endpoint        string // MAKET_S3_ENDPOINT: http or https base URL
+	S3Bucket          string // MAKET_S3_BUCKET
+	S3Region          string // MAKET_S3_REGION
+	S3AccessKeyID     string // MAKET_S3_ACCESS_KEY_ID
+	S3SecretAccessKey string // MAKET_S3_SECRET_ACCESS_KEY
 
 	GitHubClientID     string   // MAKET_GITHUB_CLIENT_ID
 	GitHubClientSecret string   // MAKET_GITHUB_CLIENT_SECRET
@@ -102,8 +111,22 @@ func FromLookup(lookup func(string) (string, bool)) (Config, error) {
 	if c.PublicScheme != "https" && c.PublicScheme != "http" {
 		problems = append(problems, fmt.Errorf("MAKET_PUBLIC_SCHEME must be \"https\" or \"http\", got %q", c.PublicScheme))
 	}
-	if c.StorageDriver != "local" {
-		problems = append(problems, fmt.Errorf("MAKET_STORAGE_DRIVER must be \"local\" (s3 is not implemented yet), got %q", c.StorageDriver))
+	switch c.StorageDriver {
+	case "local":
+	case "s3":
+		c.S3Endpoint = required("MAKET_S3_ENDPOINT")
+		if c.S3Endpoint != "" {
+			u, err := url.Parse(c.S3Endpoint)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				problems = append(problems, fmt.Errorf("MAKET_S3_ENDPOINT must be an http or https URL, got %q", c.S3Endpoint))
+			}
+		}
+		c.S3Bucket = required("MAKET_S3_BUCKET")
+		c.S3Region = get("MAKET_S3_REGION", "auto")
+		c.S3AccessKeyID = required("MAKET_S3_ACCESS_KEY_ID")
+		c.S3SecretAccessKey = required("MAKET_S3_SECRET_ACCESS_KEY")
+	default:
+		problems = append(problems, fmt.Errorf("MAKET_STORAGE_DRIVER must be \"local\" or \"s3\", got %q", c.StorageDriver))
 	}
 	if c.AppHost != "" && c.PreviewDomain != "" {
 		// The app must never be reachable as a preview subdomain, or preview

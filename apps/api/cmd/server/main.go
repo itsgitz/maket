@@ -53,11 +53,11 @@ func run() error {
 	}
 	defer database.Close()
 
-	store, err := storage.NewLocal(cfg.StorageDir())
+	store, closeStore, err := openStorage(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer closeStore()
 
 	allow, err := auth.NewAllowlist(cfg.AllowedGitHubUsers)
 	if err != nil {
@@ -124,6 +124,38 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// openStorage builds the Prototype file store named by MAKET_STORAGE_DRIVER.
+// For s3 it checks the bucket is reachable, so a wrong name or credentials
+// stop the server at startup. The returned func releases the store and is
+// safe to call once.
+func openStorage(ctx context.Context, cfg config.Config, log *slog.Logger) (storage.Storage, func(), error) {
+	if cfg.StorageDriver == "s3" {
+		s, err := storage.NewS3(storage.S3Config{
+			Endpoint:        cfg.S3Endpoint,
+			Bucket:          cfg.S3Bucket,
+			Region:          cfg.S3Region,
+			AccessKeyID:     cfg.S3AccessKeyID,
+			SecretAccessKey: cfg.S3SecretAccessKey,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		if err := s.Check(checkCtx); err != nil {
+			return nil, nil, err
+		}
+		log.Info("storage", "driver", "s3", "bucket", cfg.S3Bucket)
+		return s, func() {}, nil
+	}
+	local, err := storage.NewLocal(cfg.StorageDir())
+	if err != nil {
+		return nil, nil, err
+	}
+	log.Info("storage", "driver", "local", "dir", cfg.StorageDir())
+	return local, func() { local.Close() }, nil
 }
 
 // cleanup runs the housekeeping jobs at startup and then hourly until ctx
