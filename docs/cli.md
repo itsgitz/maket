@@ -4,28 +4,50 @@
 
 ## Install
 
-1. Download the binary for your OS and architecture from the releases page:
+On Linux and macOS, install the latest release with one line:
 
-   | OS | amd64 | arm64 |
-   |---|---|---|
-   | Linux | `maket-linux-amd64` | `maket-linux-arm64` |
-   | macOS | `maket-darwin-amd64` | `maket-darwin-arm64` |
-   | Windows | `maket-windows-amd64.exe` | `maket-windows-arm64.exe` |
+```sh
+curl -fsSL https://raw.githubusercontent.com/itsgitz/maket/main/install.sh | sh
+```
 
-2. Make it executable and put it on your `PATH` under the name `maket`:
+The script detects your OS and architecture, downloads the matching binary from the [latest release](https://github.com/itsgitz/maket/releases/latest), checks its SHA-256 against `checksums.txt` and installs it as `maket`. It never runs `sudo`. It installs to `/usr/local/bin` when that directory is writable, otherwise to `~/.local/bin`. Two environment variables change this:
 
-   ```sh
-   chmod +x maket-linux-amd64
-   mv maket-linux-amd64 ~/.local/bin/maket   # or /usr/local/bin/maket
-   ```
+| Variable | Meaning |
+|---|---|
+| `MAKET_VERSION` | Install a specific release, e.g. `v0.1.0`. Default: the latest release. |
+| `MAKET_INSTALL_DIR` | Install into this directory instead of the default. |
 
-   On Windows, rename the file to `maket.exe` and place it in a folder listed in `PATH`.
+For example, `curl -fsSL https://raw.githubusercontent.com/itsgitz/maket/main/install.sh | MAKET_VERSION=v0.1.0 MAKET_INSTALL_DIR=$HOME/bin sh`.
 
-3. Check it:
+To install by hand, download the binary for your OS and architecture from the [releases page](https://github.com/itsgitz/maket/releases/latest):
 
-   ```sh
-   maket version
-   ```
+| OS | amd64 | arm64 |
+|---|---|---|
+| Linux | `maket-linux-amd64` | `maket-linux-arm64` |
+| macOS | `maket-darwin-amd64` | `maket-darwin-arm64` |
+| Windows | `maket-windows-amd64.exe` | `maket-windows-arm64.exe` |
+
+Every release also has a `checksums.txt` with the SHA-256 of each binary. To verify a download manually:
+
+```sh
+curl -fsSL -O https://github.com/itsgitz/maket/releases/latest/download/checksums.txt
+sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 -c checksums.txt
+```
+
+Then make it executable and put it on your `PATH` under the name `maket`:
+
+```sh
+chmod +x maket-linux-amd64
+mv maket-linux-amd64 ~/.local/bin/maket   # or /usr/local/bin/maket
+```
+
+On Windows, rename the file to `maket.exe` and place it in a folder listed in `PATH`. The installer script does not support Windows.
+
+Check it:
+
+```sh
+maket version
+```
 
 To build from source instead, run `bun run build:cli` in the repository; the binaries land in `bin/`.
 

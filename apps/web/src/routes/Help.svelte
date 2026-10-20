@@ -13,9 +13,16 @@
 <section>
   <h2>1. Install the CLI</h2>
   <p>
-    Download the <code>maket</code> binary for your OS from the releases page, make it executable and put it on
-    your <code>PATH</code>. It is a single static binary with no dependencies.
+    Download the <code>maket</code> binary from the
+    <a href="https://github.com/itsgitz/maket/releases/latest" target="_blank" rel="noopener">releases page</a>, make
+    it executable and put it on your <code>PATH</code>. It is a single static binary with no dependencies.
   </p>
+  <p>
+    On Linux and macOS, this one-liner installs the right binary for your machine, checks its checksum and puts it
+    on your <code>PATH</code>:
+  </p>
+  <CodeBlock code="curl -fsSL https://raw.githubusercontent.com/itsgitz/maket/main/install.sh | sh" />
+  <p>Or do it by hand:</p>
   <CodeBlock code={"chmod +x maket\nsudo mv maket /usr/local/bin/"} />
 </section>
 
