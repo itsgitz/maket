@@ -1,0 +1,44 @@
+# maket server image. Build from the repository root:
+#
+#   podman build -f deploy/Containerfile -t localhost/maket:latest .
+#
+# Base image tags are pinned. Bump them deliberately, and only to tags at least
+# two weeks old.
+
+ARG MAKET_VERSION=dev
+
+# Stage 1: build the dashboard. Vite writes it to apps/api/internal/webui/dist,
+# which the Go build embeds.
+FROM docker.io/oven/bun:1.4.0 AS web
+WORKDIR /src
+COPY package.json bun.lock ./
+COPY apps/web/package.json apps/web/
+RUN bun install --frozen-lockfile
+COPY . .
+RUN bun run build:web
+
+# Stage 2: build the static server binary. The Go version matches apps/api/go.mod.
+FROM docker.io/library/golang:1.27.0-bookworm AS server
+WORKDIR /src/apps/api
+COPY apps/api/go.mod apps/api/go.sum ./
+RUN go mod download
+COPY apps/api/ ./
+COPY --from=web /src/apps/api/internal/webui/dist/ ./internal/webui/dist/
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/maket-server ./cmd/server
+# The data directory is created here so it can be owned by the nonroot user.
+RUN mkdir -p /out/data && chown 65532:65532 /out/data
+
+# Stage 3: minimal runtime. distroless static includes CA certificates and
+# runs as the nonroot user (65532).
+FROM gcr.io/distroless/static-debian12:nonroot
+ARG MAKET_VERSION
+LABEL org.opencontainers.image.title="maket" \
+      org.opencontainers.image.source="https://github.com/itsgitz/maket" \
+      org.opencontainers.image.version="${MAKET_VERSION}"
+COPY --from=server /out/maket-server /maket-server
+COPY --from=server --chown=65532:65532 /out/data /data
+ENV MAKET_DATA_DIR=/data \
+    MAKET_LISTEN_ADDR=127.0.0.1:8080
+VOLUME /data
+USER 65532:65532
+ENTRYPOINT ["/maket-server"]

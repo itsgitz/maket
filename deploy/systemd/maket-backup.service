@@ -1,0 +1,12 @@
+# User unit for the nightly backup. Install to ~/.config/systemd/user/.
+# Paths assume the checkout is at ~/maket.
+[Unit]
+Description=Back up maket data to Cloudflare R2 (restic)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/maket/deploy/backup.sh
+Nice=10
+IOSchedulingClass=idle

@@ -1,0 +1,13 @@
+# Keep the build context small and free of secrets. Used by podman build.
+**/node_modules
+bin
+.git
+.worktrees
+.claude/worktrees
+apps/api/data
+apps/api/tmp
+.env
+**/.env
+# Built dashboard output is regenerated inside the image. Keep the .gitkeep.
+apps/api/internal/webui/dist/*
+!apps/api/internal/webui/dist/.gitkeep
