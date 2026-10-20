@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest a change or a new capability
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first. A short issue is fine; the maintainers will ask for details if they need them.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What would you like maket to do? Mention the CLI, the API or the dashboard if it matters.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checks
+      options:
+        - label: I checked the existing issues and the docs in `docs/`.
+          required: true
+        - label: I used the terms from `GLOSSARY.md` (Prototype, Version, Upload, Preview, and so on).
+          required: false

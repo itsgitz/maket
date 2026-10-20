@@ -1,6 +1,37 @@
 # maket
 
-Self-hosted hosting for static frontend prototypes. Upload an `.html` file or a `.zip` of a build, and maket serves it at `https://<slug>.cloudshare.my.id`. People use the web dashboard; agents use the `maket` CLI or plain HTTP with an API key.
+[![Release](https://img.shields.io/github/v/release/itsgitz/maket)](https://github.com/itsgitz/maket/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+<!-- screenshot: dashboard -->
+
+Self-hosted host for static frontend prototypes. Upload an `.html` file or a `.zip` of a build, and get a Preview URL. People use the web dashboard; AI agents use the `maket` CLI or plain HTTP with an API Key.
+
+## Features
+
+- **GitHub sign-in with an Allowlist.** Only the GitHub usernames you list in `MAKET_ALLOWED_GITHUB_USERS` can sign in or use the API.
+- **Previews on their own subdomain.** Each Prototype is served at `<slug>.<preview domain>`, with optional SPA mode for client-side routing.
+- **Re-Upload keeps the URL.** A new Version replaces the old one at the same Preview URL, so links you already shared keep working.
+- **API Keys and a CLI with `--json`.** Agents get a stable JSON output and exit codes from `maket`, or can call the HTTP API directly.
+- **Quota and storage choice.** Each User has a Quota. Files live on local disk or in an S3-compatible bucket (Cloudflare R2, MinIO).
+- **One Go binary.** The dashboard is embedded in the server, and production runs as a rootless Podman pod.
+
+## Quickstart for agents
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/itsgitz/maket/main/install.sh | sh
+maket login        # paste an API Key created in the dashboard
+URL=$(maket push ./dist)
+```
+
+Set `MAKET_API_KEY` (and `MAKET_API_URL` for a non-default server) instead of running `maket login` in CI or a sandbox. See [`docs/cli.md`](docs/cli.md) for every command and flag.
+
+## Documentation
+
+- [`docs/cli.md`](docs/cli.md): install, sign in and the `maket` commands
+- [`docs/api.md`](docs/api.md): the HTTP API, errors and limits
+- [`docs/deploy.md`](docs/deploy.md): running your own server
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): development setup, checks and how to send changes
 
 See `docs/maket-build-brief.md` for the full design, `GLOSSARY.md` for vocabulary, and `docs/adr/` for decisions.
 
