@@ -26,8 +26,9 @@ const (
 // S3Store is a Storage on an S3-compatible service such as Cloudflare R2 or
 // MinIO. Keys are object keys in one bucket, used as they are.
 type S3Store struct {
-	client *s3.Client
-	bucket string
+	client   *s3.Client
+	bucket   string
+	endpoint string
 }
 
 var _ Storage = (*S3Store)(nil)
@@ -61,7 +62,17 @@ func NewS3(cfg S3Config) (*S3Store, error) {
 		o.BaseEndpoint = aws.String(cfg.Endpoint)
 		o.UsePathStyle = true
 	})
-	return &S3Store{client: client, bucket: cfg.Bucket}, nil
+	return &S3Store{client: client, bucket: cfg.Bucket, endpoint: cfg.Endpoint}, nil
+}
+
+// Check reports whether the bucket exists and the credentials can reach it,
+// with a HeadBucket request. The server calls it at startup so a wrong
+// bucket name or credentials fail there, not as "not found" on every Preview.
+func (s *S3Store) Check(ctx context.Context) error {
+	if _, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s.bucket)}); err != nil {
+		return fmt.Errorf("storage: cannot access bucket %q at %s: %w", s.bucket, s.endpoint, err)
+	}
+	return nil
 }
 
 // Put uploads r as the object at key. Up to one part's worth of data goes

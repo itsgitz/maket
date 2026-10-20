@@ -396,3 +396,40 @@ func TestS3NewRequiresFields(t *testing.T) {
 		t.Error("NewS3 without a secret succeeded")
 	}
 }
+
+// bucketServer answers HeadBucket for bucket "b" with status, and any other
+// bucket with 404.
+func bucketServer(t *testing.T, status int) *storage.S3Store {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead && r.URL.Path == "/b" && status != http.StatusNotFound {
+			w.WriteHeader(status)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	s, err := storage.NewS3(storage.S3Config{
+		Endpoint: srv.URL, Bucket: "b", AccessKeyID: "k", SecretAccessKey: "s",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestS3CheckBucket(t *testing.T) {
+	if err := bucketServer(t, http.StatusOK).Check(t.Context()); err != nil {
+		t.Errorf("Check on an existing bucket: %v", err)
+	}
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
+		err := bucketServer(t, status).Check(t.Context())
+		if err == nil {
+			t.Errorf("Check with status %d succeeded", status)
+			continue
+		}
+		if !strings.Contains(err.Error(), `cannot access bucket "b"`) {
+			t.Errorf("Check error = %q, want the bucket named", err)
+		}
+	}
+}
