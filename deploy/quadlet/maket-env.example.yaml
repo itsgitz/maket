@@ -21,7 +21,14 @@ data:
   # Inside the pod, Caddy reaches the API over loopback.
   MAKET_LISTEN_ADDR: "127.0.0.1:8080"
   MAKET_DATA_DIR: "/data"
+  # "local" keeps files in /data/storage. "s3" stores them in R2 (see docs/deploy.md).
   MAKET_STORAGE_DRIVER: "local"
+  # With "s3", set these and change the driver above. Region "auto" is what R2 uses.
+  # MAKET_S3_ENDPOINT: "https://<account-id>.r2.cloudflarestorage.com"
+  # MAKET_S3_BUCKET: "maket-prototypes"
+  # MAKET_S3_REGION: "auto"
+  # MAKET_S3_ACCESS_KEY_ID: "replace-me"
+  # MAKET_S3_SECRET_ACCESS_KEY: "replace-me"
 
   # GitHub OAuth app. Callback URL:
   # https://app.kotakserver.my.id/api/auth/github/callback

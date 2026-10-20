@@ -218,6 +218,29 @@ The data volume survives upgrades, and migrations run when the new container sta
 
    The timer runs at 03:30 with up to 15 minutes of random delay. `Persistent=true` runs a missed backup at the next start.
 
+### Using Cloudflare R2 for storage
+
+By default Prototype files live in `storage/` under the data volume. To keep them in R2 instead, set `MAKET_STORAGE_DRIVER=s3` and the `MAKET_S3_*` variables in the ConfigMap (see `deploy/quadlet/maket-env.example.yaml`).
+
+1. **Create a private bucket** for Prototype files (for example `maket-prototypes`).
+2. **Create an R2 API token** with **Object Read & Write** on that bucket only. Note the access key ID and secret access key.
+3. **Set the variables:**
+
+   ```yaml
+   MAKET_STORAGE_DRIVER: "s3"
+   MAKET_S3_ENDPOINT: "https://<account-id>.r2.cloudflarestorage.com"
+   MAKET_S3_BUCKET: "maket-prototypes"
+   MAKET_S3_REGION: "auto"        # R2 uses "auto"; the default is also "auto"
+   MAKET_S3_ACCESS_KEY_ID: "<r2-access-key-id>"
+   MAKET_S3_SECRET_ACCESS_KEY: "<r2-secret-access-key>"
+   ```
+
+Things to know:
+
+- With the `s3` driver, `backup.sh` still backs up `maket.db`, but it does not copy Prototype files, because they are not in the volume. Rely on R2's durability, or add a periodic `rclone copy` of the bucket to another place if you need a second copy.
+- `backup.sh` skips the `storage/` directory when it does not exist, so the same script works with either driver.
+- The R2 token for this bucket is separate from the backup token in the backup section above. Each token should only reach its own bucket.
+
 ### Restore
 
 Restore onto the same server. Stop the server first so nothing writes during the restore.
