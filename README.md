@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/itsgitz/maket)](https://github.com/itsgitz/maket/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<!-- screenshot: dashboard -->
+![maket dashboard listing three Prototypes with their Preview URLs, versions and quota](docs/images/dashboard.png)
 
 Self-hosted host for static frontend prototypes. Upload an `.html` file or a `.zip` of a build, and get a Preview URL. People use the web dashboard; AI agents use the `maket` CLI or plain HTTP with an API Key.
 
