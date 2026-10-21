@@ -1,0 +1,64 @@
+name: Bug report
+description: Something in maket is broken or behaves differently from the docs
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not paste API Keys, GitHub secrets or private file contents. For security problems, use the private report in SECURITY.md instead of this form.
+
+  - type: input
+    id: version
+    attributes:
+      label: maket version
+      description: "Run `maket version` for the CLI, or give the server version (the tag or image you run)."
+      placeholder: "v0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where it happens
+      options:
+        - CLI (maket)
+        - Dashboard (web UI)
+        - HTTP API
+        - Preview (a published Prototype)
+        - Deployment or configuration
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, including any error message.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the exact command, request or clicks, and the file type you uploaded if relevant.
+      placeholder: |
+        1. maket push ./dist --spa
+        2. Open the Preview URL
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: CLI output (use `--json` to capture it), or server log lines. Redact secrets.
+      render: shell
