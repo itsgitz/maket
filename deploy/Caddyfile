@@ -17,3 +17,12 @@ https://app.kotakserver.my.id, https://*.cloudshare.my.id {
 	# loopback. Caddy keeps the Host header, which the app uses for routing.
 	reverse_proxy 127.0.0.1:8080
 }
+
+# Any other Host, such as a valid SNI with an unknown Host header, gets an empty
+# 404. Without this site a request that matches no site gets an empty 200. The
+# bare https:// address matches every host, and it is ordered after the site
+# above, so the two hosts above still win.
+https:// {
+	tls /certs/origin.pem /certs/origin.key
+	respond 404
+}
