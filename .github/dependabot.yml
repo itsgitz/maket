@@ -1,0 +1,53 @@
+# Dependabot keeps dependencies and base images current. Minor and patch updates
+# for each ecosystem are grouped into one PR. Major updates come as separate PRs.
+# Commit prefixes follow Conventional Commits: build(deps) for code and images,
+# ci(deps) for GitHub Actions.
+version: 2
+updates:
+  # Go modules for the API server
+  - package-ecosystem: "gomod"
+    directory: "/apps/api"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      go-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Bun workspaces (root package.json, bun.lock, apps/web)
+  - package-ecosystem: "bun"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      bun-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Base images in deploy/Containerfile (bun, golang, distroless digest)
+  - package-ecosystem: "docker"
+    directory: "/deploy"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      docker-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Actions used in .github/workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      actions-minor-patch:
+        update-types: ["minor", "patch"]
