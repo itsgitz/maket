@@ -18,6 +18,17 @@ Throughout this guide, `deploy` is the deploy user and the checkout is `~/maket`
 
 Read [ADR 0001](adr/0001-quadlet-kube-unit-instead-of-pod.md) for why the unit is a `.kube` unit and not a `.pod` unit.
 
+## Guided setup
+
+[`deploy/setup/`](../deploy/setup/README.md) has scripts that do most of the steps below. Run them in this order:
+
+1. As root: `sudo bash deploy/setup/01-server.sh` (sections 1 and 2).
+2. As `deploy`: `bash deploy/setup/02-secrets.sh` (the dashboard steps in sections 3, 4 and 8, and the secret files).
+3. As `deploy`: `bash deploy/setup/03-install.sh` (sections 5, 6 and 8).
+4. Later, as `deploy`: `bash deploy/setup/04-upgrade.sh` (section 7).
+
+Scripts 01, 03 and 04 print each command before it runs and ask before they change anything. Script 02 asks for each value and never prints a secret. `--dry-run` shows the plan without changing anything. This document stays the reference: if a script and this page disagree, this page is right, and the script needs a fix.
+
 ## 1. Server preparation
 
 Run these as root or with `sudo` on a fresh Ubuntu server.
