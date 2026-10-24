@@ -76,7 +76,7 @@ jobs:
 
       # shellcheck is preinstalled on the ubuntu-24.04 runner image (0.9.0).
       - name: shellcheck
-        run: shellcheck install.sh deploy/backup.sh
+        run: shellcheck install.sh deploy/backup.sh deploy/setup/*.sh
 
       # Pinned release binary, verified against the release checksums.
       - name: actionlint
