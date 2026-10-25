@@ -10,12 +10,16 @@
 #   maket-env.yaml     the api ConfigMap (same format as deploy/quadlet/maket-env.example.yaml)
 #   backup.env         restic settings for Cloudflare R2
 #   restic-password    the restic repository password
-#   certs/origin.pem   Cloudflare Origin Certificate
-#   certs/origin.key   its private key
+#   certs/app.pem      Cloudflare Origin Certificate for app.kotakserver.my.id (kotakserver.my.id zone)
+#   certs/app.key      its private key
+#   certs/preview.pem  Cloudflare Origin Certificate for *.cloudshare.my.id (cloudshare.my.id zone)
+#   certs/preview.key  its private key
 #
 # Secrets are read with hidden input and are never printed or logged. Re-run it
 # any time: saved values are offered as defaults (secrets are shown masked).
 # Nothing here changes the system; it does not need sudo.
+# Two certificates are needed because Cloudflare binds the hostnames of an
+# Origin Certificate to the zone it is created in.
 
 set -euo pipefail
 
@@ -28,7 +32,7 @@ RESTIC_PW="$CONF_DIR/restic-password"
 case "${1:-}" in
   "") ;;
   -h|--help)
-    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
     exit 0 ;;
   *) printf 'unknown option: %s (this wizard is interactive; see --help)\n' "$1" >&2; exit 1 ;;
 esac
@@ -300,9 +304,15 @@ EOF
   printf '  %s✓ wrote%s %s\n' "$GREEN" "$RESET" "$BACKUP_ENV"
 }
 
-# validate_cert CERT KEY checks that the pair is usable for the origin.
+# validate_cert CERT KEY REQUIRED... checks that the pair is usable for one zone.
+# Each REQUIRED is a DNS name the certificate must list, or several names
+# separated by "|" when any one of them is enough (for example
+# "app.kotakserver.my.id|*.kotakserver.my.id"). Names are matched exactly, so
+# app.kotakserver.my.id does not match app.kotakserver.my.id.cloudshare.my.id.
 validate_cert() {
-  local cert="$1" key="$2" san name
+  local cert="$1" key="$2" san req ok alt
+  local -a alts
+  shift 2
   openssl x509 -in "$cert" -noout >/dev/null 2>&1 || { warn "the certificate is not a PEM certificate"; return 1; }
   openssl pkey -in "$key" -noout </dev/null >/dev/null 2>&1 || { warn "the private key is not a PEM key"; return 1; }
   if [[ "$(openssl x509 -in "$cert" -noout -pubkey | sha256sum)" != "$(openssl pkey -in "$key" -pubout </dev/null | sha256sum)" ]]; then
@@ -313,10 +323,16 @@ validate_cert() {
     warn "the certificate has expired"
     return 1
   fi
-  san="$(openssl x509 -in "$cert" -noout -ext subjectAltName 2>/dev/null || true)"
-  for name in app.kotakserver.my.id cloudshare.my.id '*.cloudshare.my.id'; do
-    if ! grep -qF "DNS:$name" <<<"$san"; then
-      warn "the certificate does not list $name"
+  # One DNS entry per line, so each name is compared exactly.
+  san="$(openssl x509 -in "$cert" -noout -ext subjectAltName 2>/dev/null | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' || true)"
+  for req in "$@"; do
+    ok=0
+    IFS='|' read -ra alts <<<"$req"
+    for alt in "${alts[@]}"; do
+      if grep -qxF "DNS:$alt" <<<"$san"; then ok=1; break; fi
+    done
+    if (( ! ok )); then
+      warn "the certificate does not list ${req//|/ or }"
       return 1
     fi
   done
@@ -339,11 +355,39 @@ paste_block() {
   chmod 600 "$dest"
 }
 
+# origin_cert NAME REQUIRED... saves certs/NAME.pem and certs/NAME.key. A valid
+# pair that is already saved is kept unless the human asks to replace it. A new
+# pair is validated before it replaces the old one, or the script stops.
+origin_cert() {
+  local name="$1" pem key replace_cert=1
+  shift
+  pem="$CERT_DIR/$name.pem"
+  key="$CERT_DIR/$name.key"
+  if [[ -s "$pem" && -s "$key" ]] && validate_cert "$pem" "$key" "$@" 2>/dev/null; then
+    say "A valid $name certificate is already saved."
+    if ! confirm "Replace it with a new one?"; then replace_cert=0; fi
+  fi
+  if (( replace_cert )); then
+    paste_block "$pem.new" "certificate (starts with -----BEGIN CERTIFICATE-----)" 0
+    paste_block "$key.new" "private key (starts with -----BEGIN PRIVATE KEY----- or RSA/EC)" 1
+    if validate_cert "$pem.new" "$key.new" "$@"; then
+      mv -f "$pem.new" "$pem"
+      mv -f "$key.new" "$key"
+      chmod 600 "$pem" "$key"
+      WRITTEN_ENV+=("$pem" "$key")
+      printf '  %s✓ saved%s %s.pem and %s.key (mode 600)\n' "$GREEN" "$RESET" "$name" "$name"
+    else
+      rm -f "$pem.new" "$key.new"
+      die "nothing was replaced. Run this stage again with the right files."
+    fi
+  fi
+}
+
 # ──────────────────────────────────────────────────────────────────────────
 # STAGES
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=11
+TOTAL_STAGES=12
 
 mkdir -p "$CONF_DIR" "$CERT_DIR"
 chmod 700 "$CONF_DIR" "$CERT_DIR"
@@ -366,7 +410,7 @@ if [[ "$(id -un)" != deploy ]]; then
   warn "You are $(id -un), not deploy. The paths in the output assume the deploy user's home."
   confirm "Continue anyway?" || die "stopped"
 fi
-note "Files: $CFG_FILE, $BACKUP_ENV, $RESTIC_PW, $CERT_DIR/origin.{pem,key}"
+note "Files: $CFG_FILE, $BACKUP_ENV, $RESTIC_PW, $CERT_DIR/{app,preview}.{pem,key}"
 pause "Press Enter to start the first dashboard step"
 
 # ── 2 ─────────────────────────────────────────────────────────────────────
@@ -390,36 +434,28 @@ step "Do not turn on any other redirect or port 80 rule."
 pause "Press Enter when both zones are set"
 
 # ── 4 ─────────────────────────────────────────────────────────────────────
-stage "Cloudflare: Origin Certificate"
-say "The origin certificate lets Cloudflare reach this server over HTTPS in Full (strict) mode."
+stage "Cloudflare: origin certificate for the app"
+say "Cloudflare reaches this server over HTTPS in Full (strict) mode. This certificate covers"
+say "app.kotakserver.my.id. It must be created in the kotakserver.my.id zone."
 open_url "https://dash.cloudflare.com/"
-step "Open cloudshare.my.id, then SSL/TLS > Origin Server > Create Certificate."
-step "Key type: RSA or ECC. Hostnames: app.kotakserver.my.id, cloudshare.my.id, *.cloudshare.my.id."
+step "Open kotakserver.my.id, then SSL/TLS > Origin Server > Create Certificate."
+step "Key type: RSA or ECC. Keep the default hostnames: kotakserver.my.id and *.kotakserver.my.id."
 step "Choose the longest validity. Cloudflare shows the private key only once. Keep the page open."
 pause "Press Enter when the certificate and private key are on screen"
-
-replace_cert=1
-if [[ -s "$CERT_DIR/origin.pem" && -s "$CERT_DIR/origin.key" ]] &&
-  validate_cert "$CERT_DIR/origin.pem" "$CERT_DIR/origin.key" 2>/dev/null; then
-  say "A valid origin certificate is already saved."
-  if ! confirm "Replace it with a new one?"; then replace_cert=0; fi
-fi
-if (( replace_cert )); then
-  paste_block "$CERT_DIR/origin.pem.new" "certificate (starts with -----BEGIN CERTIFICATE-----)" 0
-  paste_block "$CERT_DIR/origin.key.new" "private key (starts with -----BEGIN PRIVATE KEY----- or RSA/EC)" 1
-  if validate_cert "$CERT_DIR/origin.pem.new" "$CERT_DIR/origin.key.new"; then
-    mv -f "$CERT_DIR/origin.pem.new" "$CERT_DIR/origin.pem"
-    mv -f "$CERT_DIR/origin.key.new" "$CERT_DIR/origin.key"
-    chmod 600 "$CERT_DIR/origin.pem" "$CERT_DIR/origin.key"
-    WRITTEN_ENV+=("$CERT_DIR/origin.pem" "$CERT_DIR/origin.key")
-    printf '  %s✓ saved%s origin.pem and origin.key (mode 600)\n' "$GREEN" "$RESET"
-  else
-    rm -f "$CERT_DIR/origin.pem.new" "$CERT_DIR/origin.key.new"
-    die "nothing was replaced. Run this stage again with the right files."
-  fi
-fi
+origin_cert app "app.kotakserver.my.id|*.kotakserver.my.id"
 
 # ── 5 ─────────────────────────────────────────────────────────────────────
+stage "Cloudflare: origin certificate for previews"
+say "Preview hosts (*.cloudshare.my.id) need a second certificate. Cloudflare creates origin"
+say "certificates per zone, so the one from stage 4 cannot cover them."
+open_url "https://dash.cloudflare.com/"
+step "Open cloudshare.my.id, then SSL/TLS > Origin Server > Create Certificate."
+step "Key type: RSA or ECC. Keep the default hostnames: cloudshare.my.id and *.cloudshare.my.id."
+step "Choose the longest validity. Cloudflare shows the private key only once. Keep the page open."
+pause "Press Enter when the certificate and private key are on screen"
+origin_cert preview "*.cloudshare.my.id"
+
+# ── 6 ─────────────────────────────────────────────────────────────────────
 stage "Cloudflare: cache rule for previews"
 say "Only preview hosts (*.cloudshare.my.id) are cached. The dashboard and API must never be cached."
 open_url "https://dash.cloudflare.com/"
@@ -430,7 +466,7 @@ step "Do not create a rule for kotakserver.my.id."
 note "Cloudflare moves menu items now and then. Keep the expression and the two settings."
 pause "Press Enter when the rule is saved"
 
-# ── 6 ─────────────────────────────────────────────────────────────────────
+# ── 7 ─────────────────────────────────────────────────────────────────────
 stage "Cloudflare: cache purge (optional)"
 say "Purging the cache after a preview is re-uploaded or deleted needs an API token."
 if confirm "Set up cache purge?"; then
@@ -448,7 +484,7 @@ else
 fi
 save_cfg
 
-# ── 7 ─────────────────────────────────────────────────────────────────────
+# ── 8 ─────────────────────────────────────────────────────────────────────
 stage "GitHub OAuth app"
 say "maket signs users in with GitHub. Create the OAuth app for the production host."
 open_url "https://github.com/settings/developers"
@@ -461,7 +497,7 @@ need MAKET_GITHUB_CLIENT_ID "Paste the Client ID:" '^[A-Za-z0-9._-]{8,}$' "a Git
 need MAKET_GITHUB_CLIENT_SECRET "Paste the client secret (hidden):" '^[A-Za-z0-9._-]{20,}$' "the client secret from GitHub" 1
 save_cfg
 
-# ── 8 ─────────────────────────────────────────────────────────────────────
+# ── 9 ─────────────────────────────────────────────────────────────────────
 stage "Allowed GitHub users"
 say "Only these GitHub accounts can sign in. Separate usernames with commas."
 need MAKET_ALLOWED_GITHUB_USERS "GitHub usernames:" \
@@ -469,7 +505,7 @@ need MAKET_ALLOWED_GITHUB_USERS "GitHub usernames:" \
 put MAKET_ALLOWED_GITHUB_USERS "${CURRENT[MAKET_ALLOWED_GITHUB_USERS]//[[:space:]]/}"
 save_cfg
 
-# ── 9 ─────────────────────────────────────────────────────────────────────
+# ── 10 ─────────────────────────────────────────────────────────────────────
 stage "Cloudflare R2: backup bucket and API token"
 say "restic backups go to a private R2 bucket. Use a token that only reaches this bucket."
 open_url "https://dash.cloudflare.com/"
@@ -483,7 +519,7 @@ need AWS_ACCESS_KEY_ID "Access Key ID:" '^[A-Za-z0-9]{16,}$' "the R2 access key 
 need AWS_SECRET_ACCESS_KEY "Secret Access Key (hidden):" '^[A-Za-z0-9/+=_-]{16,}$' "the R2 secret access key" 1
 save_backup
 
-# ── 10 ────────────────────────────────────────────────────────────────────
+# ── 11 ────────────────────────────────────────────────────────────────────
 stage "restic repository password"
 say "This password encrypts every backup. Lose it and the backups cannot be read."
 if [[ -s "$RESTIC_PW" ]]; then
@@ -511,7 +547,7 @@ if [[ ! -s "$RESTIC_PW" ]]; then
   printf '  %s✓ saved%s %s (mode 600)\n' "$GREEN" "$RESET" "$RESTIC_PW"
 fi
 
-# ── 11 ────────────────────────────────────────────────────────────────────
+# ── 12 ────────────────────────────────────────────────────────────────────
 stage "Check the files"
 missing=()
 for key in MAKET_GITHUB_CLIENT_ID MAKET_GITHUB_CLIENT_SECRET MAKET_ALLOWED_GITHUB_USERS; do
@@ -524,16 +560,20 @@ if [[ -n "$cf_token" && -z "$cf_zone" ]] || [[ -z "$cf_token" && -n "$cf_zone" ]
 fi
 [[ -s "$BACKUP_ENV" ]] || missing+=("backup.env")
 [[ -s "$RESTIC_PW" ]] || missing+=("restic-password")
-[[ -s "$CERT_DIR/origin.pem" && -s "$CERT_DIR/origin.key" ]] || missing+=("origin certificate and key")
+[[ -s "$CERT_DIR/app.pem" && -s "$CERT_DIR/app.key" ]] || missing+=("app certificate and key (stage 4)")
+[[ -s "$CERT_DIR/preview.pem" && -s "$CERT_DIR/preview.key" ]] || missing+=("preview certificate and key (stage 5)")
 if (( ${#missing[@]} )); then
   warn "still missing: ${missing[*]}"
   SKIPPED+=("re-run this wizard for: ${missing[*]}")
 else
   note "all required values are present"
 fi
-for f in "$CFG_FILE" "$BACKUP_ENV" "$RESTIC_PW" "$CERT_DIR/origin.pem" "$CERT_DIR/origin.key"; do
+for f in "$CFG_FILE" "$BACKUP_ENV" "$RESTIC_PW" "$CERT_DIR/app.pem" "$CERT_DIR/app.key" "$CERT_DIR/preview.pem" "$CERT_DIR/preview.key"; do
   [[ -e "$f" ]] && note "$(stat -c '%a' "$f") $f"
 done
+if [[ -e "$CERT_DIR/origin.pem" || -e "$CERT_DIR/origin.key" ]]; then
+  note "unused: $CERT_DIR/origin.pem and origin.key from the single-certificate setup. Nothing reads them now; delete them when you like."
+fi
 save_cfg
 finish
 say "Next: bash deploy/setup/03-install.sh (run as deploy, from ~/maket)."

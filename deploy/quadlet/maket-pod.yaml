@@ -53,7 +53,8 @@ spec:
       hostPath:
         path: /home/deploy/maket/deploy/Caddyfile
         type: File
-    # Cloudflare Origin Certificate: origin.pem and origin.key, mode 600.
+    # Cloudflare Origin Certificates, one per zone: app.pem and app.key,
+    # preview.pem and preview.key. Mode 600.
     # Kept outside the checkout so it cannot be committed.
     - name: certs
       hostPath:
