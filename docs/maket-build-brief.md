@@ -24,7 +24,7 @@ Read this whole document before writing code. Work milestone by milestone (see t
 | App domain | `app.kotakserver.my.id` | Dashboard, `/api/*`, login, API keys |
 | Preview domain | `*.cloudshare.my.id` | Uploaded prototypes only. Nothing else ever runs on this domain |
 | DNS / CDN | Cloudflare (free plan), proxy on for both domains | Cache Rule "cache everything" on `*.cloudshare.my.id` only |
-| TLS | Cloudflare Origin Certificate loaded in Caddy | One cert for `app.kotakserver.my.id` + `*.cloudshare.my.id`; SSL mode Full (strict) |
+| TLS | Cloudflare Origin Certificates loaded in Caddy | One cert per zone: `app.kotakserver.my.id` (kotakserver.my.id zone) and `*.cloudshare.my.id` (cloudshare.my.id zone); SSL mode Full (strict) |
 | Containers | Podman (rootless) + Quadlet units | Caddy + API in one pod, managed by systemd |
 | Reverse proxy | Caddy | TLS + `reverse_proxy` to the Go app only |
 | Monorepo | Bun workspaces | Bun is package manager and task runner. Go keeps its own `go.mod` |
@@ -305,19 +305,24 @@ Also document an equivalent `curl` upload in `docs/api.md` for agents that canno
 ## 13. Deployment
 
 - `deploy/Containerfile`: multi-stage — Bun builds the web app, Go builds a static server binary, final image is minimal (distroless static or scratch with CA certs). Runs as non-root.
-- `deploy/quadlet/`: `maket.pod`, `maket-api.container`, `maket-caddy.container`, and a named volume for `/data`. Caddy mounts the origin cert read-only.
+- `deploy/quadlet/`: `maket.pod`, `maket-api.container`, `maket-caddy.container`, and a named volume for `/data`. Caddy mounts the origin certs read-only.
 - Rootless Podman on ports 80/443: document `net.ipv4.ip_unprivileged_port_start=80` (or the chosen alternative) in the README.
 - `deploy/Caddyfile`:
 
   ```caddy
-  app.kotakserver.my.id, *.cloudshare.my.id {
-      tls /certs/origin.pem /certs/origin.key
+  app.kotakserver.my.id {
+      tls /certs/app.pem /certs/app.key
+      reverse_proxy 127.0.0.1:8080
+  }
+
+  *.cloudshare.my.id {
+      tls /certs/preview.pem /certs/preview.key
       reverse_proxy 127.0.0.1:8080
   }
   ```
 
 - `deploy/backup.sh`: consistent SQLite backup (`sqlite3 .backup` or `VACUUM INTO`) plus the storage directory, suitable for a nightly systemd timer with `restic` or `rsync`.
-- README section with manual Cloudflare steps: add both zones, proxied DNS records (`app` on kotakserver, wildcard `*` on cloudshare), generate the origin certificate, set SSL to Full (strict), create the Cache Rule for `*.cloudshare.my.id`.
+- README section with manual Cloudflare steps: add both zones, proxied DNS records (`app` on kotakserver, wildcard `*` on cloudshare), generate one origin certificate per zone, set SSL to Full (strict), create the Cache Rule for `*.cloudshare.my.id`.
 
 ---
 

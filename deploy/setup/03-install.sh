@@ -192,7 +192,8 @@ preflight() {
   fi
 
   for f in "$CONF_DIR/maket-env.yaml" "$BACKUP_ENV" "$CONF_DIR/restic-password" \
-           "$CERT_DIR/origin.pem" "$CERT_DIR/origin.key"; do
+           "$CERT_DIR/app.pem" "$CERT_DIR/app.key" \
+           "$CERT_DIR/preview.pem" "$CERT_DIR/preview.key"; do
     if [[ ! -e "$f" ]]; then
       problem "missing $f (run 02-secrets.sh)"
       continue
@@ -205,7 +206,7 @@ preflight() {
   for f in "$CONF_DIR" "$CERT_DIR"; do
     [[ -d "$f" ]] && { mode="$(stat -c %a "$f")"; [[ "$mode" == 700 ]] || problem "$f is mode $mode, expected 700"; }
   done
-  ok "secret files are present with mode 600 (checked: maket-env.yaml, backup.env, restic-password, origin.pem, origin.key)"
+  ok "secret files are present with mode 600 (checked: maket-env.yaml, backup.env, restic-password, app.pem, app.key, preview.pem, preview.key)"
 
   ports="$(ss -tlnp 2>/dev/null | awk '/:443 / {print $4}' | tr '\n' ' ' || true)"
   if [[ -n "$ports" ]]; then note "something already listens on 443: $ports"; fi

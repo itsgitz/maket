@@ -11,7 +11,7 @@ Throughout this guide, `deploy` is the deploy user and the checkout is `~/maket`
 | Checkout | `~/maket` |
 | Quadlet units | `~/.config/containers/systemd/maket.kube`, `maket-pod.yaml` |
 | Environment (ConfigMap, mode 600) | `~/.config/maket/maket-env.yaml` |
-| Origin certificate (mode 600) | `~/.config/maket/certs/origin.pem`, `origin.key` |
+| Origin certificates, one per zone (mode 600) | `~/.config/maket/certs/app.pem`, `app.key` (kotakserver.my.id) and `preview.pem`, `preview.key` (cloudshare.my.id) |
 | Backup settings (mode 600) | `~/.config/maket/backup.env` |
 | restic repository password (mode 600) | `~/.config/maket/restic-password` |
 | Data volume | Podman volume `maket-data` (`maket.db`, `storage/`) |
@@ -96,17 +96,23 @@ Do these in the Cloudflare dashboard. Both zones are on the Free plan, and every
 1. **Add both zones.** Add `kotakserver.my.id` and `cloudshare.my.id`, and point their nameservers at Cloudflare.
 2. **DNS records.** On `kotakserver.my.id`, add an `A` record named `app` with the VPS IPv4 address, proxied. On `cloudshare.my.id`, add an `A` record named `*` with the same address, proxied.
 3. **SSL/TLS mode.** On both zones, set **SSL/TLS > Overview > Full (strict)**.
-4. **Origin Certificate.** On `cloudshare.my.id` (or `kotakserver.my.id`), go to **SSL/TLS > Origin Server > Create Certificate**. Use RSA or ECC and list these hostnames: `app.kotakserver.my.id`, `cloudshare.my.id`, `*.cloudshare.my.id`. Choose the longest validity. Cloudflare shows the private key only once. On the server:
+4. **Origin Certificates, one per zone.** Cloudflare binds the hostnames of an Origin Certificate to the zone it is created in. Creating one hostname list from `cloudshare.my.id` rewrites `app.kotakserver.my.id` to `app.kotakserver.my.id.cloudshare.my.id`, so the app and the previews need two certificates.
+   - **App certificate.** On `kotakserver.my.id`, go to **SSL/TLS > Origin Server > Create Certificate**. Use RSA or ECC, keep the default hostnames (`kotakserver.my.id`, `*.kotakserver.my.id`), and choose the longest validity. Save the certificate as `app.pem` and the private key as `app.key`.
+   - **Preview certificate.** On `cloudshare.my.id`, do the same and keep its default hostnames (`cloudshare.my.id`, `*.cloudshare.my.id`). Save them as `preview.pem` and `preview.key`.
+
+   Cloudflare shows each private key only once. `02-secrets.sh` walks you through both and checks the names. To do it by hand on the server:
 
    ```sh
    mkdir -p ~/.config/maket/certs && chmod 700 ~/.config/maket ~/.config/maket/certs
-   # Paste the certificate into origin.pem and the private key into origin.key
-   nano ~/.config/maket/certs/origin.pem
-   nano ~/.config/maket/certs/origin.key
-   chmod 600 ~/.config/maket/certs/origin.pem ~/.config/maket/certs/origin.key
+   # Paste each certificate and its private key into the files below
+   nano ~/.config/maket/certs/app.pem
+   nano ~/.config/maket/certs/app.key
+   nano ~/.config/maket/certs/preview.pem
+   nano ~/.config/maket/certs/preview.key
+   chmod 600 ~/.config/maket/certs/*.pem ~/.config/maket/certs/*.key
    ```
 
-   These files never go into the repository. `.gitignore` also excludes `certs/`.
+   These files never go into the repository. `.gitignore` also excludes `certs/`. An older `origin.pem` and `origin.key` from the single-certificate setup are not read anymore, so you can delete them.
 5. **Always Use HTTPS.** On both zones, go to **SSL/TLS > Edge Certificates** and turn on **Always Use HTTPS**. This replaces the port 80 listener.
 6. **Cache Rule for previews only.** On `cloudshare.my.id`, go to **Caching > Cache Rules > Create rule**. Set the expression to `http.host wildcard "*.cloudshare.my.id"`. Set **Cache eligibility** to "Eligible for cache" (cache everything), and **Edge TTL** to "Use cache-control header if present". Do not add a rule for `kotakserver.my.id`. The dashboard and API must never be cached.
 7. **Optional: cache purge.** If you want previews purged after re-upload or delete, create an API token with **Zone > Cache Purge > Purge**, scoped to `cloudshare.my.id`. Put the token in `MAKET_CF_API_TOKEN`, and the zone ID from the zone's Overview page in `MAKET_CF_ZONE_ID`. Set both or neither.
@@ -148,7 +154,7 @@ systemctl --user start maket
 systemctl --user status maket --no-pager
 ```
 
-Caddy reads `/etc/caddy/Caddyfile` from `~/maket/deploy/Caddyfile` through a read-only mount. The certificate files come from `~/.config/maket/certs`. The first start creates the `maket-data` volume and runs the database migrations.
+Caddy reads `/etc/caddy/Caddyfile` from `~/maket/deploy/Caddyfile` through a read-only mount. The certificate files come from `~/.config/maket/certs`: `app.pem`/`app.key` for the app and `preview.pem`/`preview.key` for the previews. The first start creates the `maket-data` volume and runs the database migrations.
 
 To start the service at boot, the `[Install]` section of `maket.kube` (`WantedBy=default.target`) takes effect after `systemctl --user daemon-reload` once linger is enabled. Check `systemctl --user is-enabled maket`.
 
@@ -292,4 +298,4 @@ podman logs -f maket-caddy             # Caddy
 journalctl --user -u maket-backup      # nightly backups
 ```
 
-If the service fails to start, check `~/maket/deploy/Caddyfile` and `~/.config/maket/certs/` (both must exist and be readable), and check the variables in `~/.config/maket/maket-env.yaml`. The server exits with a list of every missing or invalid setting.
+If the service fails to start, check `~/maket/deploy/Caddyfile` and `~/.config/maket/certs/` (the Caddyfile and all four certificate files must exist and be readable), and check the variables in `~/.config/maket/maket-env.yaml`. The server exits with a list of every missing or invalid setting.

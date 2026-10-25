@@ -7,22 +7,32 @@
 	admin off
 }
 
-# Both hosts use the Cloudflare Origin Certificate, which is mounted at /certs
-# from the operator's ~/.config/maket/certs directory. The https:// prefix keeps
-# each site on :443 only.
-https://app.kotakserver.my.id, https://*.cloudshare.my.id {
-	tls /certs/origin.pem /certs/origin.key
+# Each Cloudflare zone has its own Origin Certificate, mounted at /certs from the
+# operator's ~/.config/maket/certs directory. Cloudflare binds the hostnames of a
+# certificate to the zone it was created in, so the app (kotakserver.my.id zone)
+# and the previews (cloudshare.my.id zone) cannot share one. The https:// prefix
+# keeps each site on :443 only.
+https://app.kotakserver.my.id {
+	tls /certs/app.pem /certs/app.key
 
 	# The API container shares the pod network namespace, so it is reachable on
 	# loopback. Caddy keeps the Host header, which the app uses for routing.
 	reverse_proxy 127.0.0.1:8080
 }
 
+https://*.cloudshare.my.id {
+	tls /certs/preview.pem /certs/preview.key
+
+	reverse_proxy 127.0.0.1:8080
+}
+
 # Any other Host, such as a valid SNI with an unknown Host header, gets an empty
 # 404. Without this site a request that matches no site gets an empty 200. The
-# bare https:// address matches every host, and it is ordered after the site
-# above, so the two hosts above still win.
+# bare https:// address matches every host, and it is ordered after the two
+# sites above, so the two hosts above still win. This block needs a certificate
+# too. It uses the preview one. The choice is arbitrary: an unknown host gets a
+# 404 whichever file is used.
 https:// {
-	tls /certs/origin.pem /certs/origin.key
+	tls /certs/preview.pem /certs/preview.key
 	respond 404
 }
