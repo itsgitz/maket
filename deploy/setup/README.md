@@ -6,7 +6,7 @@ Guided scripts for the production server. They do the steps in [`docs/deploy.md`
 
 | # | Script | Run as | What it does |
 |---|---|---|---|
-| 1 | `01-server.sh` | root | Packages, `deploy` user, subuid/subgid, SSH keys for `deploy`, linger, port 443 sysctl, 2 GB swap, ufw (OpenSSH, then Cloudflare 443 ranges), optional Cloudflare range refresh script |
+| 1 | `01-server.sh` | root | Packages, `deploy` user, subuid/subgid, SSH keys for `deploy`, optional SSH password login off (root key only, asks first), linger, port 443 sysctl, 2 GB swap, ufw (OpenSSH, then Cloudflare 443 ranges), optional Cloudflare range refresh script |
 | - | (clone) | deploy | `git clone https://github.com/itsgitz/maket.git ~/maket && cd ~/maket && git checkout "$(git tag --sort=-v:refname \| head -1)"`. Checks out the newest tag. `02` lives in this checkout. |
 | 2 | `02-secrets.sh` | deploy | Interactive wizard for the Cloudflare, GitHub and R2 dashboards. Writes `~/.config/maket/maket-env.yaml`, `backup.env`, `restic-password`, `certs/origin.pem` and `origin.key` (mode 600). |
 | 3 | `03-install.sh` | deploy | Builds the image, installs the Quadlet units, starts maket, checks health through Caddy, `restic init`, nightly backup timer, optional first backup. |
@@ -16,7 +16,7 @@ Release: `03` and `04` deploy the newest `vX.Y.Z` tag on origin. Pin one with `-
 
 ## Changes each script makes
 
-- **01** changes system state: apt packages, a user, `/etc/subuid` and `/etc/subgid` if missing, `/etc/sysctl.d/99-maket-unprivileged-443.conf`, `/swapfile` and `/etc/fstab` (only if no swap is active), ufw rules and `ufw enable`, `/usr/local/sbin/maket-cf-ufw-refresh` (optional).
+- **01** changes system state: apt packages, a user, `/etc/subuid` and `/etc/subgid` if missing, `/etc/ssh/sshd_config.d/00-maket-hardening.conf` (optional: turns off password login, root key only; test a new login in a second terminal before you close the first), `/etc/sysctl.d/99-maket-unprivileged-443.conf`, `/swapfile` and `/etc/fstab` (only if no swap is active), ufw rules and `ufw enable`, `/usr/local/sbin/maket-cf-ufw-refresh` (optional).
 - **02** writes only under `~/.config/maket`. It does not use sudo.
 - **03** writes `~/maket`, `~/.config/containers/systemd/`, `~/.config/systemd/user/maket-backup.*`, a Podman image and the R2 repository. It starts the service and enables the timer.
 - **04** updates `~/maket`, possibly the Quadlet units, the image, and restarts the service.
