@@ -62,6 +62,8 @@ _STAGE_INDEX=0
 declare -A CURRENT=()
 WRITTEN_ENV=()    # files written this run
 SKIPPED=()        # things left for the human to do
+BACKUPS_CHOSEN=0  # 1 when R2 backups were set up in this run (stage 10)
+BACKUPS_OFF=0     # 1 when no backup.env exists, so nothing is backed up yet
 
 # Undo a hidden-input step if the script is interrupted.
 trap 'stty echo 2>/dev/null || true' EXIT
@@ -198,6 +200,9 @@ finish() {
   if (( ${#SKIPPED[@]} )); then
     printf '\n'; warn "still to do by hand:"
     for s in "${SKIPPED[@]}"; do note "  - $s"; done
+  fi
+  if (( BACKUPS_OFF )); then
+    printf '\n'; warn "NO BACKUPS: nothing is backed up until you re-run this wizard (answer yes to R2) and then 03-install.sh."
   fi
   printf '\n'
 }
@@ -507,44 +512,59 @@ save_cfg
 
 # ── 10 ─────────────────────────────────────────────────────────────────────
 stage "Cloudflare R2: backup bucket and API token"
-say "restic backups go to a private R2 bucket. Use a token that only reaches this bucket."
-open_url "https://dash.cloudflare.com/"
-step "Open R2 object storage. Copy the Account ID from the R2 overview page."
-need CF_ACCOUNT_ID "Account ID:" "$ACCOUNT_RE" "a 32-character hex account ID"
-step "Create a bucket (default name maket-backups). Keep it private."
-need R2_BUCKET "Bucket name:" '^[a-z0-9][a-z0-9.-]{2,62}$' "a lowercase bucket name"
-step "Manage API tokens > Create API token. Permission: Object Read & Write. Apply to this bucket only."
-step "Copy the Access Key ID and the Secret Access Key. The secret is shown only once."
-need AWS_ACCESS_KEY_ID "Access Key ID:" '^[A-Za-z0-9]{16,}$' "the R2 access key ID"
-need AWS_SECRET_ACCESS_KEY "Secret Access Key (hidden):" '^[A-Za-z0-9/+=_-]{16,}$' "the R2 secret access key" 1
-save_backup
+say "Backups are optional. R2 needs a payment method on the account; skip this if you do not have one yet."
+if confirm "Set up R2 backups now?"; then
+  BACKUPS_CHOSEN=1
+  say "restic backups go to a private R2 bucket. Use a token that only reaches this bucket."
+  open_url "https://dash.cloudflare.com/"
+  step "Open R2 object storage. Copy the Account ID from the R2 overview page."
+  need CF_ACCOUNT_ID "Account ID:" "$ACCOUNT_RE" "a 32-character hex account ID"
+  step "Create a bucket (default name maket-backups). Keep it private."
+  need R2_BUCKET "Bucket name:" '^[a-z0-9][a-z0-9.-]{2,62}$' "a lowercase bucket name"
+  step "Manage API tokens > Create API token. Permission: Object Read & Write. Apply to this bucket only."
+  step "Copy the Access Key ID and the Secret Access Key. The secret is shown only once."
+  need AWS_ACCESS_KEY_ID "Access Key ID:" '^[A-Za-z0-9]{16,}$' "the R2 access key ID"
+  need AWS_SECRET_ACCESS_KEY "Secret Access Key (hidden):" '^[A-Za-z0-9/+=_-]{16,}$' "the R2 secret access key" 1
+  save_backup
+elif [[ -s "$BACKUP_ENV" ]]; then
+  note "Backups were not changed in this run. The existing $BACKUP_ENV is kept untouched."
+else
+  BACKUPS_OFF=1
+  warn "Backups are off. There will be NO backups until you re-run this wizard (answer yes here) and then 03-install.sh."
+  SKIPPED+=("backups (R2): not set up. Re-run 02-secrets.sh (answer yes to R2), then 03-install.sh, to add them")
+fi
 
 # ── 11 ────────────────────────────────────────────────────────────────────
 stage "restic repository password"
-say "This password encrypts every backup. Lose it and the backups cannot be read."
-if [[ -s "$RESTIC_PW" ]]; then
-  say "A password file already exists. Keeping it keeps existing backups readable."
-  if confirm "Replace it? (Existing backups in the bucket will then be unreadable)"; then
-    rm -f "$RESTIC_PW"
+if (( ! BACKUPS_CHOSEN )); then
+  note "skipped: backups were not set up in this run, so no restic password is needed yet."
+  note "Any existing $RESTIC_PW is kept untouched."
+else
+  say "This password encrypts every backup. Lose it and the backups cannot be read."
+  if [[ -s "$RESTIC_PW" ]]; then
+    say "A password file already exists. Keeping it keeps existing backups readable."
+    if confirm "Replace it? (Existing backups in the bucket will then be unreadable)"; then
+      rm -f "$RESTIC_PW"
+    fi
   fi
-fi
-if [[ ! -s "$RESTIC_PW" ]]; then
-  if confirm "Generate a random password with openssl now?"; then
-    umask 077
-    openssl rand -base64 32 > "$RESTIC_PW.new"
-    mv -f "$RESTIC_PW.new" "$RESTIC_PW"
-    chmod 600 "$RESTIC_PW"
-    warn "Save the password in a password manager now. It is in $RESTIC_PW (run cat yourself; it is not shown here)."
-  else
-    ask_secret RESTIC_PASSWORD_INPUT "Paste the restic password (hidden):" || die "input closed"
-    [[ -n "$RESTIC_PASSWORD_INPUT" ]] || die "an empty password is not allowed"
-    umask 077
-    printf '%s\n' "$RESTIC_PASSWORD_INPUT" > "$RESTIC_PW"
-    chmod 600 "$RESTIC_PW"
-    unset RESTIC_PASSWORD_INPUT
+  if [[ ! -s "$RESTIC_PW" ]]; then
+    if confirm "Generate a random password with openssl now?"; then
+      umask 077
+      openssl rand -base64 32 > "$RESTIC_PW.new"
+      mv -f "$RESTIC_PW.new" "$RESTIC_PW"
+      chmod 600 "$RESTIC_PW"
+      warn "Save the password in a password manager now. It is in $RESTIC_PW (run cat yourself; it is not shown here)."
+    else
+      ask_secret RESTIC_PASSWORD_INPUT "Paste the restic password (hidden):" || die "input closed"
+      [[ -n "$RESTIC_PASSWORD_INPUT" ]] || die "an empty password is not allowed"
+      umask 077
+      printf '%s\n' "$RESTIC_PASSWORD_INPUT" > "$RESTIC_PW"
+      chmod 600 "$RESTIC_PW"
+      unset RESTIC_PASSWORD_INPUT
+    fi
+    WRITTEN_ENV+=("$RESTIC_PW")
+    printf '  %s✓ saved%s %s (mode 600)\n' "$GREEN" "$RESET" "$RESTIC_PW"
   fi
-  WRITTEN_ENV+=("$RESTIC_PW")
-  printf '  %s✓ saved%s %s (mode 600)\n' "$GREEN" "$RESET" "$RESTIC_PW"
 fi
 
 # ── 12 ────────────────────────────────────────────────────────────────────
@@ -558,8 +578,15 @@ cf_zone="$(cv MAKET_CF_ZONE_ID)"
 if [[ -n "$cf_token" && -z "$cf_zone" ]] || [[ -z "$cf_token" && -n "$cf_zone" ]]; then
   missing+=("MAKET_CF_API_TOKEN and MAKET_CF_ZONE_ID (set both or neither)")
 fi
-[[ -s "$BACKUP_ENV" ]] || missing+=("backup.env")
-[[ -s "$RESTIC_PW" ]] || missing+=("restic-password")
+# Backup files are required only when backups were set up in this run or
+# backup.env is already there. Otherwise they are a warning, not a missing value.
+if (( BACKUPS_CHOSEN )) || [[ -e "$BACKUP_ENV" ]]; then
+  [[ -s "$BACKUP_ENV" ]] || missing+=("backup.env")
+  [[ -s "$RESTIC_PW" ]] || missing+=("restic-password")
+else
+  BACKUPS_OFF=1
+  warn "backups not set up (no backup.env). That is allowed; the install runs without backups."
+fi
 [[ -s "$CERT_DIR/app.pem" && -s "$CERT_DIR/app.key" ]] || missing+=("app certificate and key (stage 4)")
 [[ -s "$CERT_DIR/preview.pem" && -s "$CERT_DIR/preview.key" ]] || missing+=("preview certificate and key (stage 5)")
 if (( ${#missing[@]} )); then

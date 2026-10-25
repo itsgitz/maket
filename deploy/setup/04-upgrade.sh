@@ -142,6 +142,9 @@ preflight() {
   fi
   [[ -d "$CHECKOUT/.git" ]] || problem "no checkout at $CHECKOUT. Run 03-install.sh first."
   [[ -f "$CONF_DIR/maket-env.yaml" ]] || problem "no $CONF_DIR/maket-env.yaml. Run 03-install.sh first."
+  if [[ ! -e "$CONF_DIR/backup.env" ]]; then
+    warn "backups are not set up, so there is no backup to restore from if this upgrade goes wrong. This script takes no backup itself."
+  fi
   if [[ -d "$CHECKOUT/.git" ]]; then
     PREVIOUS="$(git -C "$CHECKOUT" describe --tags --exact-match 2>/dev/null || git -C "$CHECKOUT" rev-parse --short HEAD)"
   else

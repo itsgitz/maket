@@ -17,6 +17,10 @@
 #   7. Timer         install and enable maket-backup.timer (nightly)
 #   8. First backup  run deploy/backup.sh once (optional)
 #
+# Backups are optional. Steps 6 to 8 need ~/.config/maket/backup.env (written by
+# 02-secrets.sh when R2 is set up). Without it they are skipped and the install
+# runs with no backups. Re-run 02-secrets.sh, then this script, to add them.
+#
 # Options:
 #   --release TAG  release to deploy (default: the newest vX.Y.Z tag on origin;
 #                  MAKET_RELEASE works too)
@@ -40,6 +44,7 @@ DRY_RUN=0
 ASSUME_YES=0
 PLAN=0
 RELEASE="${MAKET_RELEASE:-}"
+BACKUPS_ON=0   # 1 when backup.env exists: restic, the timer and the first backup apply
 DONE_STEPS=()
 SKIPPED_STEPS=()
 
@@ -125,6 +130,15 @@ version_ge() {
   [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]
 }
 
+# skip_backup_step TITLE: shows a step that cannot run without backup.env. It is
+# recorded as skipped, not as already in place, so the summary is accurate.
+skip_backup_step() {
+  local title="$1"
+  printf '\n%s%s▸ %s%s\n' "$BOLD" "$BLUE" "$title" "$RESET"
+  note "skipped: backups are not set up (no $BACKUP_ENV)"
+  SKIPPED_STEPS+=("$title (skipped: backups not set up)")
+}
+
 # restic_run ARGS...: restic with backup.env loaded, in a subshell.
 restic_run() {
   # shellcheck source=/dev/null
@@ -146,6 +160,7 @@ resolve_release() {
 
 preflight() {
   local podman_version tool f mode ports
+  local -a secret_files checked
   if (( EUID == 0 )); then
     problem "run this as the deploy user, not root"
   fi
@@ -156,7 +171,10 @@ preflight() {
     note "dry-run: podman, systemd and network state are read but not changed"
   fi
 
-  for tool in git curl restic sqlite3 openssl podman sha256sum; do
+  if [[ -e "$BACKUP_ENV" ]]; then BACKUPS_ON=1; fi
+  local -a tools=(git curl openssl podman sha256sum)
+  if (( BACKUPS_ON )); then tools+=(restic sqlite3); fi
+  for tool in "${tools[@]}"; do
     command -v "$tool" >/dev/null 2>&1 || problem "$tool is not installed (run 01-server.sh)"
   done
 
@@ -191,9 +209,15 @@ preflight() {
     fi
   fi
 
-  for f in "$CONF_DIR/maket-env.yaml" "$BACKUP_ENV" "$CONF_DIR/restic-password" \
-           "$CERT_DIR/app.pem" "$CERT_DIR/app.key" \
-           "$CERT_DIR/preview.pem" "$CERT_DIR/preview.key"; do
+  secret_files=("$CONF_DIR/maket-env.yaml" "$CERT_DIR/app.pem" "$CERT_DIR/app.key" \
+                "$CERT_DIR/preview.pem" "$CERT_DIR/preview.key")
+  # backup.env and restic-password are required only once backups are set up.
+  if (( BACKUPS_ON )); then
+    secret_files+=("$BACKUP_ENV" "$CONF_DIR/restic-password")
+  else
+    warn "backups are not set up: no restic repository, no nightly timer. Re-run 02-secrets.sh and then 03-install.sh to add them."
+  fi
+  for f in "${secret_files[@]}"; do
     if [[ ! -e "$f" ]]; then
       problem "missing $f (run 02-secrets.sh)"
       continue
@@ -202,11 +226,14 @@ preflight() {
     if [[ "$mode" != 600 && "$mode" != 400 ]]; then
       problem "$f is mode $mode, expected 600"
     fi
+    checked+=("$(basename "$f")")
   done
   for f in "$CONF_DIR" "$CERT_DIR"; do
     [[ -d "$f" ]] && { mode="$(stat -c %a "$f")"; [[ "$mode" == 700 ]] || problem "$f is mode $mode, expected 700"; }
   done
-  ok "secret files are present with mode 600 (checked: maket-env.yaml, backup.env, restic-password, app.pem, app.key, preview.pem, preview.key)"
+  if (( ${#checked[@]} == ${#secret_files[@]} )); then
+    ok "secret files are present with mode 600 (checked: ${checked[*]})"
+  fi
 
   ports="$(ss -tlnp 2>/dev/null | awk '/:443 / {print $4}' | tr '\n' ' ' || true)"
   if [[ -n "$ports" ]]; then note "something already listens on 443: $ports"; fi
@@ -374,6 +401,9 @@ summary() {
   if (( ${#SKIPPED_STEPS[@]} )); then
     say "Skipped:"; for s in "${SKIPPED_STEPS[@]}"; do note "  - $s"; done
   fi
+  if (( ! BACKUPS_ON )); then
+    warn "NO BACKUPS: this install has no restic repository and no nightly timer. Re-run 02-secrets.sh (answer yes to R2), then this script."
+  fi
   printf '\n%s%s  Next steps (by hand)%s\n' "$BOLD" "$GREEN" "$RESET"
   say "1. Sign in: open https://$APP_HOST and sign in with GitHub (an allowed user)."
   say "2. Create an API key under API keys in the dashboard, then from your machine:"
@@ -405,9 +435,15 @@ main() {
   do_step "3. Install Quadlet units and reload systemd" check_units action_units
   do_step "4. Start maket" check_running action_start
   verify_local
-  do_step "5. restic repository (R2) init" check_repo_init action_restic_init
-  do_step "6. Nightly backup timer" check_timer action_timer
-  do_step "7. First backup now (optional)" check_never action_first_backup
+  if (( BACKUPS_ON )); then
+    do_step "5. restic repository (R2) init" check_repo_init action_restic_init
+    do_step "6. Nightly backup timer" check_timer action_timer
+    do_step "7. First backup now (optional)" check_never action_first_backup
+  else
+    skip_backup_step "5. restic repository (R2) init"
+    skip_backup_step "6. Nightly backup timer"
+    skip_backup_step "7. First backup now (optional)"
+  fi
 
   summary
 }
