@@ -4,7 +4,7 @@
 #
 # Run as the deploy user, after 03-install.sh has run once:
 #   bash deploy/setup/04-upgrade.sh
-#   bash deploy/setup/04-upgrade.sh --release v0.2.1 --dry-run
+#   bash deploy/setup/04-upgrade.sh --release v0.2.2 --dry-run
 #
 # Steps. Each one prints its exact commands and asks [y/N] before it changes
 # anything. The data volume is not touched; migrations run when the new container starts.

@@ -304,7 +304,8 @@ summary() {
   else
     say "1. Log in as deploy over SSH (ssh deploy@<this-server>)."
     say "2. Clone the checkout, which holds the setup scripts:"
-    note "   git clone https://github.com/itsgitz/maket.git ~/maket && cd ~/maket && git checkout v0.2.1"
+    # shellcheck disable=SC2016  # single quotes keep $(...) literal in the printed command
+    note '   git clone https://github.com/itsgitz/maket.git ~/maket && cd ~/maket && git checkout "$(git tag --sort=-v:refname | head -1)"'
     say "3. Run: bash deploy/setup/02-secrets.sh"
   fi
 }
