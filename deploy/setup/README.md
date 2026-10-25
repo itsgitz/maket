@@ -29,7 +29,7 @@ bash deploy/setup/03-install.sh --dry-run       # run as any user to review the 
 bash deploy/setup/04-upgrade.sh --dry-run --release v0.2.2
 ```
 
-`--yes` answers yes to every prompt. Use it only after a dry run you read through.
+`--yes` answers yes to every prompt, except the root key question in step 5 of `01-server.sh`: that step is skipped under `--yes`, so run it without `--yes`. Use `--yes` only after a dry run you read through.
 
 Each step is idempotent. Re-running a script skips the steps that are already in place.
 

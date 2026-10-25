@@ -195,6 +195,12 @@ action_ssh_password() {
     STEP_SKIP_REASON="deploy has no SSH key"
     return 0
   fi
+  # --yes must not answer the root key question: a wrong yes can lock you out.
+  if (( ASSUME_YES )); then
+    note "This step asks whether you log in as root with a key. --yes does not answer that, so the step is skipped."
+    STEP_SKIP_REASON="needs an interactive answer; re-run without --yes"
+    return 0
+  fi
   if (( PLAN )); then
     warn "This turns off SSH password login for every user."
     note "Root keeps SSH login with a key. deploy has no sudo, so root is still needed for admin."
