@@ -4,7 +4,7 @@
 #
 # Run as the deploy user, after 01-server.sh (as root) and 02-secrets.sh:
 #   bash deploy/setup/03-install.sh
-#   bash deploy/setup/03-install.sh --release v0.2.1 --dry-run
+#   bash deploy/setup/03-install.sh --release v0.2.2 --dry-run
 #
 # Steps. Each one prints its exact commands and asks [y/N] before it changes
 # anything. A step that is already in place is skipped.
