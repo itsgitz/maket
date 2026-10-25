@@ -23,8 +23,8 @@ Read [ADR 0001](adr/0001-quadlet-kube-unit-instead-of-pod.md) for why the unit i
 [`deploy/setup/`](../deploy/setup/README.md) has scripts that do most of the steps below. Run them in this order:
 
 1. As root: `sudo bash deploy/setup/01-server.sh` (sections 1 and 2). It has an optional step that turns off SSH password login. Test a new login as `root` and as `deploy` in a second terminal before you close the first one.
-2. As `deploy`: `bash deploy/setup/02-secrets.sh` (the dashboard steps in sections 3, 4 and 8, and the secret files).
-3. As `deploy`: `bash deploy/setup/03-install.sh` (sections 5, 6 and 8).
+2. As `deploy`: `bash deploy/setup/02-secrets.sh` (the dashboard steps in sections 3, 4 and 8, and the secret files). R2 backups are optional here; answer no if the account has no payment method yet.
+3. As `deploy`: `bash deploy/setup/03-install.sh` (sections 5, 6 and 8). Without backup settings it skips the restic and timer steps and warns that there are no backups.
 4. Later, as `deploy`: `bash deploy/setup/04-upgrade.sh` (section 7).
 
 Scripts 01, 03 and 04 print each command before it runs and ask before they change anything. Script 02 asks for each value and never prints a secret. `--dry-run` shows the plan without changing anything. This document stays the reference: if a script and this page disagree, this page is right, and the script needs a fix.
@@ -192,6 +192,8 @@ The data volume survives upgrades, and migrations run when the new container sta
 ## 8. Backups
 
 `deploy/backup.sh` copies `maket.db` with `sqlite3 .backup`, which is safe while the server is writing in WAL mode. It then backs up that copy and `storage/` with restic. It keeps 7 daily, 4 weekly and 6 monthly snapshots.
+
+Backups are optional at install. Without them the app runs, but nothing is backed up and a lost volume cannot be restored. To add them later (for example once R2 is available): re-run `02-secrets.sh` and answer yes to R2, then re-run `03-install.sh`. The steps below are what those scripts do. Re-running is safe; existing files are only replaced when you say so.
 
 1. **Create the R2 bucket and an API token.** In Cloudflare R2, create a private bucket (for example `maket-backups`). Create an R2 API token with **Object Read & Write** on that bucket only. Note the access key ID and secret access key. The endpoint is `https://<account-id>.r2.cloudflarestorage.com`.
 2. **Create the restic password file.** Keep a copy of this password in a password manager. Without it the backups cannot be read.
