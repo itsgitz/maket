@@ -11,11 +11,12 @@
 #   2. deploy user     useradd --create-home --shell /bin/bash deploy
 #   3. subuid/subgid   rootless Podman needs id ranges for the deploy user
 #   4. SSH access      copy root's authorized_keys to deploy (only when deploy has none)
-#   5. linger          loginctl enable-linger deploy (services run after logout)
-#   6. sysctl          net.ipv4.ip_unprivileged_port_start=443
-#   7. swap            2 GB /swapfile (only when the machine has no swap at all)
-#   8. firewall        ufw: allow OpenSSH, then Cloudflare 443 ranges, then enable
-#   9. refresh script  /usr/local/sbin/maket-cf-ufw-refresh (optional)
+#   5. SSH password    turn off SSH password login, root key only (optional, asks first)
+#   6. linger          loginctl enable-linger deploy (services run after logout)
+#   7. sysctl          net.ipv4.ip_unprivileged_port_start=443
+#   8. swap            2 GB /swapfile (only when the machine has no swap at all)
+#   9. firewall        ufw: allow OpenSSH, then Cloudflare 443 ranges, then enable
+#  10. refresh script  /usr/local/sbin/maket-cf-ufw-refresh (optional)
 #
 # Options:
 #   --dry-run  print every command and change nothing. Works without root.
@@ -31,6 +32,7 @@ ASSUME_YES=0
 PLAN=0
 DONE_STEPS=()
 SKIPPED_STEPS=()
+STEP_SKIP_REASON=""   # set by an action that refuses to run; do_step reads it
 
 # ──────────────────────────────────────────────────────────────────────────
 # Output helpers (same look as the /wizard library)
@@ -81,7 +83,8 @@ write_file() {
 
 # do_step TITLE CHECK ACTION. CHECK returns 0 when the step is already done.
 # ACTION runs twice: first as a plan (PLAN=1, prints commands), then for real
-# after the human says yes.
+# after the human says yes. An action that refuses sets STEP_SKIP_REASON and
+# returns 0; the step is then skipped without a die.
 do_step() {
   local title="$1" check="$2" action="$3"
   printf '\n%s%s▸ %s%s\n' "$BOLD" "$BLUE" "$title" "$RESET"
@@ -91,8 +94,14 @@ do_step() {
     return 0
   fi
   PLAN=1
+  STEP_SKIP_REASON=""
   "$action" || die "could not plan: $title"
   PLAN=0
+  if [[ -n "$STEP_SKIP_REASON" ]]; then
+    note "skipped: $STEP_SKIP_REASON"
+    SKIPPED_STEPS+=("$title ($STEP_SKIP_REASON)")
+    return 0
+  fi
   if (( DRY_RUN )); then
     note "dry-run: nothing was changed"
     SKIPPED_STEPS+=("$title (dry-run)")
@@ -103,7 +112,13 @@ do_step() {
     SKIPPED_STEPS+=("$title (declined)")
     return 0
   fi
+  STEP_SKIP_REASON=""
   "$action" || die "step failed: $title"
+  if [[ -n "$STEP_SKIP_REASON" ]]; then
+    note "skipped: $STEP_SKIP_REASON"
+    SKIPPED_STEPS+=("$title ($STEP_SKIP_REASON)")
+    return 0
+  fi
   DONE_STEPS+=("$title")
   printf '  %s✓ done%s\n' "$GREEN" "$RESET"
 }
@@ -145,6 +160,81 @@ action_ssh_keys() {
   note "Copies root's keys so you can log in as deploy. Skip this if you prefer another key."
   run install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
   run install -m 600 -o deploy -g deploy /root/.ssh/authorized_keys /home/deploy/.ssh/authorized_keys
+}
+
+SSHD_HARDEN_FILE=/etc/ssh/sshd_config.d/00-maket-hardening.conf
+
+# sshd_value KEY: reads `sshd -T` output on stdin and prints the first value of
+# KEY. sshd -T prints the effective value, lowercase key first.
+sshd_value() { awk -v k="$1" '$1 == k { print $2; exit }'; }
+
+# hardening_ok: reads `sshd -T` output on stdin. True when password and
+# keyboard-interactive logins are off and root logs in only with a key.
+# without-password is sshd's older alias for prohibit-password.
+hardening_ok() {
+  local cfg
+  cfg="$(cat)"
+  [[ "$(sshd_value passwordauthentication <<<"$cfg")" == no ]] &&
+    [[ "$(sshd_value kbdinteractiveauthentication <<<"$cfg")" == no ]] &&
+    [[ "$(sshd_value permitrootlogin <<<"$cfg")" =~ ^(prohibit-password|without-password|no)$ ]]
+}
+
+check_ssh_password_off() { sshd -T 2>/dev/null | hardening_ok; }
+
+# Ubuntu's sshd_config Includes sshd_config.d/*.conf near the top, and sshd keeps
+# the first value it reads. Cloud images often ship 50-cloud-init.conf with
+# PasswordAuthentication yes, so this file uses the 00- prefix to load first.
+action_ssh_password() {
+  if [[ ! -s /root/.ssh/authorized_keys ]]; then
+    warn "/root/.ssh/authorized_keys is empty or missing. Skipping: root would have no SSH key."
+    STEP_SKIP_REASON="root has no SSH key"
+    return 0
+  fi
+  if [[ ! -s /home/deploy/.ssh/authorized_keys ]]; then
+    warn "/home/deploy/.ssh/authorized_keys is empty or missing. Skipping: deploy would have no SSH key. Run step 4 or add a key by hand first."
+    STEP_SKIP_REASON="deploy has no SSH key"
+    return 0
+  fi
+  # --yes must not answer the root key question: a wrong yes can lock you out.
+  if (( ASSUME_YES )); then
+    note "This step asks whether you log in as root with a key. --yes does not answer that, so the step is skipped."
+    STEP_SKIP_REASON="needs an interactive answer; re-run without --yes"
+    return 0
+  fi
+  if (( PLAN )); then
+    warn "This turns off SSH password login for every user."
+    note "Root keeps SSH login with a key. deploy has no sudo, so root is still needed for admin."
+    note "Keep this SSH session open. In a second terminal, test: ssh root@<server> and ssh deploy@<server>."
+    note "Close this session only after both logins work. If you get locked out, use the provider's web console."
+  elif ! confirm "Do you log in as root with an SSH key (not a password)?"; then
+    STEP_SKIP_REASON="you do not log in as root with a key"
+    return 0
+  fi
+  write_file "$SSHD_HARDEN_FILE" 0644 <<'EOF'
+# Written by deploy/setup/01-server.sh (maket). Delete this file to undo.
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin prohibit-password
+EOF
+  if ! run sshd -t; then
+    run rm -f "$SSHD_HARDEN_FILE"
+    warn "sshd -t rejected the new settings. The file was removed and ssh was not reloaded. Run sshd -t by hand to see why."
+    STEP_SKIP_REASON="sshd -t failed"
+    return 0
+  fi
+  # try-reload-or-restart works on both the classic and socket-activated ssh
+  # units. Existing sessions stay open.
+  if ! run systemctl try-reload-or-restart ssh.service; then
+    warn "Could not reload ssh.service. Check: systemctl status ssh.service"
+  fi
+  if (( PLAN )); then return 0; fi
+  note "Effective values now (sshd -T):"
+  sshd -T 2>/dev/null | grep -E '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin) ' | sed 's/^/    /' || true
+  if check_ssh_password_off; then
+    say "Password login is off. Root logs in with a key only."
+  else
+    warn "The effective values do not match yet. Check $SSHD_HARDEN_FILE and the other files in /etc/ssh/sshd_config.d/."
+  fi
 }
 
 check_linger() {
@@ -252,7 +342,7 @@ EOF
 # ──────────────────────────────────────────────────────────────────────────
 
 usage() {
-  sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 parse_args() {
@@ -302,7 +392,7 @@ summary() {
   if (( DRY_RUN )); then
     say "This was a dry run. Run again without --dry-run to apply the changes."
   else
-    say "1. Log in as deploy over SSH (ssh deploy@<this-server>)."
+    say "1. In a second terminal, log in as deploy over SSH (ssh deploy@<this-server>). Keep this session open until that works."
     say "2. Clone the checkout, which holds the setup scripts:"
     # shellcheck disable=SC2016  # single quotes keep $(...) literal in the printed command
     note '   git clone https://github.com/itsgitz/maket.git ~/maket && cd ~/maket && git checkout "$(git tag --sort=-v:refname | head -1)"'
@@ -327,11 +417,12 @@ main() {
   do_step "2. deploy user" check_user action_user
   do_step "3. subuid/subgid ranges for deploy" check_subids action_subids
   do_step "4. SSH access for deploy" check_ssh_keys action_ssh_keys
-  do_step "5. Linger (services keep running after logout)" check_linger action_linger
-  do_step "6. Unprivileged port 443" check_sysctl action_sysctl
-  do_step "7. Swap (2 GB)" check_swap action_swap
-  do_step "8. Firewall (ufw, Cloudflare 443 only)" check_ufw action_ufw
-  do_step "9. Cloudflare range refresh script (optional)" check_cf_script action_cf_script
+  do_step "5. SSH password login off (optional)" check_ssh_password_off action_ssh_password
+  do_step "6. Linger (services keep running after logout)" check_linger action_linger
+  do_step "7. Unprivileged port 443" check_sysctl action_sysctl
+  do_step "8. Swap (2 GB)" check_swap action_swap
+  do_step "9. Firewall (ufw, Cloudflare 443 only)" check_ufw action_ufw
+  do_step "10. Cloudflare range refresh script (optional)" check_cf_script action_cf_script
 
   summary
 }

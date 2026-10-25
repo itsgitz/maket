@@ -22,7 +22,7 @@ Read [ADR 0001](adr/0001-quadlet-kube-unit-instead-of-pod.md) for why the unit i
 
 [`deploy/setup/`](../deploy/setup/README.md) has scripts that do most of the steps below. Run them in this order:
 
-1. As root: `sudo bash deploy/setup/01-server.sh` (sections 1 and 2).
+1. As root: `sudo bash deploy/setup/01-server.sh` (sections 1 and 2). It has an optional step that turns off SSH password login. Test a new login as `root` and as `deploy` in a second terminal before you close the first one.
 2. As `deploy`: `bash deploy/setup/02-secrets.sh` (the dashboard steps in sections 3, 4 and 8, and the secret files).
 3. As `deploy`: `bash deploy/setup/03-install.sh` (sections 5, 6 and 8).
 4. Later, as `deploy`: `bash deploy/setup/04-upgrade.sh` (section 7).
